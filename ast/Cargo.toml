@@ -1,0 +1,12 @@
+[package]
+name = "redscript-ast"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+derive-where.workspace = true
+bitflags.workspace = true
+
+[lints]
+workspace = true

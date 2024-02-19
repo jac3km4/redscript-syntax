@@ -1,0 +1,14 @@
+[package]
+name = "redscript-formatter-cli"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+argh.workspace = true
+redscript-parser = { path = "../parser" }
+redscript-formatter = { path = "../formatter" }
+
+[lints]
+workspace = true

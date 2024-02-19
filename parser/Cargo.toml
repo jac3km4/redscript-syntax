@@ -1,0 +1,16 @@
+[package]
+name = "redscript-parser"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+either.workspace = true
+chumsky.workspace = true
+redscript-ast = { path = "../ast" }
+
+[dev-dependencies]
+pretty_assertions.workspace = true
+
+[lints]
+workspace = true

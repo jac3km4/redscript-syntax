@@ -1,0 +1,12 @@
+[package]
+name = "redscript-formatter"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+
+[dependencies]
+pretty_dtoa.workspace = true
+redscript-ast = { path = "../ast" }
+
+[lints]
+workspace = true

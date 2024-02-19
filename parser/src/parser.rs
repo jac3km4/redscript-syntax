@@ -1,0 +1,217 @@
+use crate::{
+    lexer::Token, Block, Expr, Module, Span, Spanned, SpannedBlock, SpannedModule, SpannedStmt,
+    Stmt,
+};
+use chumsky::{input::SpannedInput, prelude::*};
+
+mod expr;
+mod item;
+mod stmt;
+
+pub use expr::expr;
+pub use item::{item, item_decl};
+use redscript_ast::{Path, Type};
+pub use stmt::stmt;
+
+use self::{item::item_decl_rec, stmt::stmt_rec};
+
+pub type ParserInput<'tok, 'src> = SpannedInput<Token<'src>, Span, &'tok [(Token<'src>, Span)]>;
+
+pub type ParseError<'tok, 'src, T = Token<'src>> = extra::Err<Rich<'tok, T, Span>>;
+
+pub fn module<'tok, 'src: 'tok>(
+) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedModule<'src>, ParseError<'tok, 'src>> + Clone
+{
+    let ident = ident();
+    let mut item_decl = Recursive::declare();
+    item_decl.define(item_decl_rec(item_decl.clone()));
+
+    just(Token::Ident("module"))
+        .ignore_then(
+            ident
+                .clone()
+                .separated_by(just(Token::Period))
+                .at_least(1)
+                .collect::<Vec<_>>(),
+        )
+        .or_not()
+        .then(
+            item_decl
+                .map_with(|i, e| (i, e.span()))
+                .repeated()
+                .collect::<Vec<_>>(),
+        )
+        .map(|(path, items)| Module::new(path.map(Path::new), items))
+}
+
+#[inline]
+fn block<'tok, 'src: 'tok>(
+) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedBlock<'src>, ParseError<'tok, 'src>> + Clone
+{
+    let mut stmt = Recursive::declare();
+    stmt.define(stmt_rec(stmt.clone()));
+    block_rec(stmt)
+}
+
+fn block_rec<'tok, 'src: 'tok>(
+    stmt: impl Parser<'tok, ParserInput<'tok, 'src>, SpannedStmt<'src>, ParseError<'tok, 'src>> + Clone,
+) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedBlock<'src>, ParseError<'tok, 'src>> + Clone
+{
+    stmt.map_with(|stmt, e| (stmt, e.span()))
+        .repeated()
+        .collect::<Vec<_>>()
+        .delimited_by(just(Token::LBrace), just(Token::RBrace))
+        .map(Block::new)
+        .recover_with(via_parser(nested_delimiters(
+            Token::LBrace,
+            Token::RBrace,
+            [
+                (Token::LParen, Token::RParen),
+                (Token::LBracket, Token::RBracket),
+            ],
+            |span| Block::single((Stmt::Expr((Expr::Error, span).into()), span)),
+        )))
+        .labelled("block")
+}
+
+fn ident<'tok, 'src: 'tok>(
+) -> impl Parser<'tok, ParserInput<'tok, 'src>, &'src str, ParseError<'tok, 'src>> + Clone {
+    select! {
+        Token::Ident(ident) => ident,
+    }
+    .labelled("identifier")
+}
+
+#[inline]
+fn type_with_span<'tok, 'src: 'tok>(
+) -> impl Parser<'tok, ParserInput<'tok, 'src>, Spanned<Type<'src>>, ParseError<'tok, 'src>> + Clone
+{
+    type_().map_with(|ty, e| (ty, e.span()))
+}
+
+#[inline(never)]
+fn type_<'tok, 'src: 'tok>(
+) -> impl Parser<'tok, ParserInput<'tok, 'src>, Type<'src>, ParseError<'tok, 'src>> + Clone {
+    recursive(|this| {
+        let arg = this
+            .clone()
+            .delimited_by(just(Token::LAngle), just(Token::RAngle))
+            .map(Box::new);
+
+        choice((
+            just(Token::Ident("ref"))
+                .ignore_then(arg.clone())
+                .map(Type::Ref),
+            just(Token::Ident("wref"))
+                .ignore_then(arg.clone())
+                .map(Type::Wref),
+            just(Token::Ident("array"))
+                .ignore_then(arg.clone())
+                .map(Type::Array),
+            just(Token::Ident("script_ref"))
+                .ignore_then(arg.clone())
+                .map(Type::ScriptRef),
+            ident().map(Type::Named),
+        ))
+        .labelled("type")
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{parse_module, Aggregate, Function, Item, ItemDecl};
+
+    use pretty_assertions::assert_eq;
+    use redscript_ast::{Constant, Import, ItemQualifiers, Visibility};
+
+    #[test]
+    fn mod_with_imports() {
+        let code = r#"
+        module Dummy
+        import Std.*
+        import Something.{Test1, Test2}
+        import Exact.Path
+        "#;
+
+        let res = parse_module(code).0.unwrap().unwrapped();
+        assert_eq!(
+            res,
+            Module::new(
+                Some(Path::new(["Dummy".into()])),
+                [
+                    ItemDecl::new(
+                        [],
+                        None,
+                        ItemQualifiers::empty(),
+                        Item::Import(Import::All(Path::new(["Std"])))
+                    ),
+                    ItemDecl::new(
+                        [],
+                        None,
+                        ItemQualifiers::empty(),
+                        Item::Import(Import::Select(
+                            Path::new(["Something".into()]),
+                            ["Test1", "Test2"].into()
+                        ))
+                    ),
+                    ItemDecl::new(
+                        [],
+                        None,
+                        ItemQualifiers::empty(),
+                        Item::Import(Import::Exact(Path::new(["Exact", "Path"])))
+                    ),
+                ]
+            )
+        );
+    }
+
+    #[test]
+    fn items() {
+        let code = r#"
+        public static func Dummy()
+
+        native struct Test {}
+
+        func Inline() -> Int32 = 1
+        "#;
+
+        let res = parse_module(code).0.unwrap().unwrapped();
+        assert_eq!(
+            res,
+            Module::new(
+                None,
+                [
+                    ItemDecl::new(
+                        [],
+                        Some(Visibility::Public),
+                        ItemQualifiers::STATIC,
+                        Item::Function(Function::new("Dummy", [], None, None))
+                    ),
+                    ItemDecl::new(
+                        [],
+                        None,
+                        ItemQualifiers::NATIVE,
+                        Item::Struct(Aggregate::new("Test", None, []))
+                    ),
+                    ItemDecl::new(
+                        [],
+                        None,
+                        ItemQualifiers::empty(),
+                        Item::Function(Function::new(
+                            "Inline",
+                            [],
+                            Some(Type::Named("Int32")),
+                            Some(
+                                Block::single(Stmt::Return(Some(
+                                    Expr::Constant(Constant::I32(1)).into()
+                                )))
+                                .into()
+                            )
+                        ))
+                    ),
+                ]
+            )
+        );
+    }
+}

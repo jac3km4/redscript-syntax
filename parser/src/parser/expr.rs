@@ -2,7 +2,6 @@ use std::iter;
 
 use crate::{lexer::Token, parser_input, Span, SpannedExpr};
 use chumsky::prelude::*;
-use either::Either;
 use redscript_ast::{Assoc, BinOp, Constant, Expr, StrPart, UnOp};
 
 use super::{ident, type_with_span, ParseError, ParserInput};
@@ -89,14 +88,6 @@ pub fn expr_with_span<'tok, 'src: 'tok>(
             .collect::<Vec<_>>()
             .delimited_by(just(Token::LParen), just(Token::RParen));
 
-        let call = ident
-            .clone()
-            .then(arguments.clone())
-            .map(|(name, args)| Expr::Call {
-                name,
-                args: args.into(),
-            });
-
         let new = just(Token::Ident("new"))
             .ignore_then(ty.clone())
             .then(arguments.clone())
@@ -122,7 +113,6 @@ pub fn expr_with_span<'tok, 'src: 'tok>(
             value,
             interp_str,
             new,
-            call,
             ident.clone().map(Expr::Ident),
         ))
         .map_with(|ex, e| (ex, e.span()))
@@ -137,29 +127,23 @@ pub fn expr_with_span<'tok, 'src: 'tok>(
             |span| (Expr::Error, span),
         )));
 
-        let member_access = just(Token::Period).ignore_then(ident.clone().then(arguments.or_not()));
+        let member_access = just(Token::Period)
+            .ignore_then(ident)
+            .map(TopPrecedence::MemberAccess);
         let array_access = this
             .clone()
-            .delimited_by(just(Token::LBracket), just(Token::RBracket));
-
+            .delimited_by(just(Token::LBracket), just(Token::RBracket))
+            .map(|args| TopPrecedence::ArrayAccess(args.into()));
+        let call = arguments.map(|arg| TopPrecedence::Call(arg.into()));
         let member = atom
             .foldl_with(
-                member_access
-                    .map(Either::Left)
-                    .or(array_access.map(Either::Right))
-                    .repeated(),
+                choice((member_access, array_access, call)).repeated(),
                 |expr, member, e| {
                     let expr = Box::new(expr);
                     let res = match member {
-                        Either::Left((member, None)) => Expr::Member { expr, member },
-                        Either::Left((method, Some(args))) => {
-                            let args = args.into();
-                            Expr::MethodCall { expr, method, args }
-                        }
-                        Either::Right(index) => {
-                            let index = Box::new(index);
-                            Expr::Index { expr, index }
-                        }
+                        TopPrecedence::MemberAccess(member) => Expr::Member { expr, member },
+                        TopPrecedence::ArrayAccess(index) => Expr::Index { expr, index },
+                        TopPrecedence::Call(args) => Expr::Call { expr, args },
                     };
                     (res, e.span())
                 },
@@ -174,7 +158,7 @@ pub fn expr_with_span<'tok, 'src: 'tok>(
                 |span| (Expr::Error, span),
             )));
 
-        let unops = unop.repeated().foldr_with(member.clone(), |op, expr, e| {
+        let unops = unop.repeated().foldr_with(member, |op, expr, e| {
             let expr = Box::new(expr);
             (Expr::UnOp { op, expr }, e.span())
         });
@@ -212,7 +196,7 @@ pub fn expr_with_span<'tok, 'src: 'tok>(
 
         let assign = ternary
             .clone()
-            .then(just(Token::Assign).ignore_then(ternary.clone()).or_not())
+            .then(just(Token::Assign).ignore_then(ternary).or_not())
             .map_with(|(lhs, rhs), e| match rhs {
                 Some(rhs) => {
                     let lhs = Box::new(lhs);
@@ -256,6 +240,13 @@ where
         );
     }
     lhs
+}
+
+#[derive(Debug)]
+enum TopPrecedence<'src> {
+    Call(Box<[(SpannedExpr<'src>, Span)]>),
+    ArrayAccess(Box<(SpannedExpr<'src>, Span)>),
+    MemberAccess(&'src str),
 }
 
 #[cfg(test)]
@@ -332,17 +323,20 @@ mod tests {
             res,
             Expr::Member {
                 expr: Expr::Index {
-                    expr: Expr::MethodCall {
-                        expr: Expr::Index {
-                            expr: Expr::Ident("obj".into()).into(),
-                            index: Expr::Member {
+                    expr: Expr::Call {
+                        expr: Expr::Member {
+                            member: "method".into(),
+                            expr: Expr::Index {
                                 expr: Expr::Ident("obj".into()).into(),
-                                member: "index".into(),
+                                index: Expr::Member {
+                                    expr: Expr::Ident("obj".into()).into(),
+                                    member: "index".into(),
+                                }
+                                .into(),
                             }
                             .into(),
                         }
                         .into(),
-                        method: "method",
                         args: [].into(),
                     }
                     .into(),

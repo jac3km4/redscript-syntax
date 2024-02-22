@@ -22,14 +22,12 @@ pub type ParseError<'tok, 'src, T = Token<'src>> = extra::Err<Rich<'tok, T, Span
 pub fn module<'tok, 'src: 'tok>(
 ) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedModule<'src>, ParseError<'tok, 'src>> + Clone
 {
-    let ident = ident();
     let mut item_decl = Recursive::declare();
     item_decl.define(item_decl_rec(item_decl.clone()));
 
     just(Token::Ident("module"))
         .ignore_then(
-            ident
-                .clone()
+            ident()
                 .separated_by(just(Token::Period))
                 .at_least(1)
                 .collect::<Vec<_>>(),
@@ -93,25 +91,26 @@ fn type_with_span<'tok, 'src: 'tok>(
 fn type_<'tok, 'src: 'tok>(
 ) -> impl Parser<'tok, ParserInput<'tok, 'src>, Type<'src>, ParseError<'tok, 'src>> + Clone {
     recursive(|this| {
-        let arg = this
-            .clone()
-            .delimited_by(just(Token::LAngle), just(Token::RAngle))
-            .map(Box::new);
-
+        let array_size = select! {  Token::Int(i) => i };
         choice((
-            just(Token::Ident("ref"))
-                .ignore_then(arg.clone())
-                .map(Type::Ref),
-            just(Token::Ident("wref"))
-                .ignore_then(arg.clone())
-                .map(Type::Wref),
-            just(Token::Ident("array"))
-                .ignore_then(arg.clone())
-                .map(Type::Array),
-            just(Token::Ident("script_ref"))
-                .ignore_then(arg.clone())
-                .map(Type::ScriptRef),
-            ident().map(Type::Named),
+            this.clone()
+                .then(just(Token::Semicolon).ignore_then(array_size).or_not())
+                .delimited_by(just(Token::LBracket), just(Token::RBracket))
+                .map(|(ex, size)| match size {
+                    Some(size) => Type::StaticArray(Box::new(ex), size as _),
+                    None => Type::Array(Box::new(ex)),
+                }),
+            ident()
+                .then(
+                    this.separated_by(just(Token::Comma))
+                        .collect::<Vec<_>>()
+                        .delimited_by(just(Token::LAngle), just(Token::RAngle))
+                        .or_not(),
+                )
+                .map(|(name, args)| Type::Named {
+                    name,
+                    args: args.unwrap_or_default().into(),
+                }),
         ))
         .labelled("type")
     })
@@ -201,7 +200,7 @@ mod tests {
                         Item::Function(Function::new(
                             "Inline",
                             [],
-                            Some(Type::Named("Int32")),
+                            Some(Type::plain("Int32")),
                             Some(
                                 Block::single(Stmt::Return(Some(
                                     Expr::Constant(Constant::I32(1)).into()

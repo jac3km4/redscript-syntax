@@ -10,7 +10,6 @@ edition = "2021"
 [workspace.dependencies]
 anyhow = "1"
 bitflags = "2"
-either = "1"
 derive-where = "1"
 argh = "0.1"
 pretty_dtoa = "0.3"

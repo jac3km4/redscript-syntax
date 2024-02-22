@@ -87,7 +87,7 @@ pub fn stmt_rec<'tok, 'src: 'tok>(
         });
 
     let for_stmt = just(Token::Ident("for"))
-        .ignore_then(ident.clone())
+        .ignore_then(ident)
         .then_ignore(just(Token::Ident("in")))
         .then(expr.clone())
         .then(block)
@@ -239,7 +239,7 @@ mod tests {
                 iter: Expr::Ident("range").into(),
                 body: Block::single(Stmt::Expr(
                     Expr::Call {
-                        name: "print",
+                        expr: Expr::Ident("print").into(),
                         args: [Expr::Ident("i")].into(),
                     }
                     .into()
@@ -262,7 +262,7 @@ mod tests {
             res,
             Stmt::Let {
                 name: "a",
-                ty: Some(Type::Named("Int32")),
+                ty: Some(Type::plain("Int32")),
                 value: Some(Expr::Constant(Constant::I32(1)).into()),
             }
         )

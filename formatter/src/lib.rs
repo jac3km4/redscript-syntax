@@ -315,17 +315,10 @@ impl<W: Wrap> Formattable for Expr<'_, W> {
             Expr::UnOp { op, expr } => {
                 write!(f, "{}{}", op.as_fmt(ctx), (**expr).as_val().as_fmt(ctx))
             }
-            Expr::Call { name, args } => {
+            Expr::Call { expr, args } => {
                 write!(
                     f,
-                    "{name}({})",
-                    SepBy(args.iter().map(Wrapper::as_val), ", ", ctx)
-                )
-            }
-            Expr::MethodCall { expr, method, args } => {
-                write!(
-                    f,
-                    "{}.{method}({})",
+                    "{}({})",
                     (**expr).as_val().as_fmt(ctx),
                     SepBy(args.iter().map(Wrapper::as_val), ", ", ctx)
                 )
@@ -392,12 +385,15 @@ impl<W: Wrap> Formattable for Param<'_, W> {
 impl Formattable for Type<'_> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         match self {
-            Self::Named(name) => write!(f, "{name}"),
-            Self::Ref(inner) => write!(f, "ref<{}>", inner.as_fmt(ctx)),
-            Self::Wref(inner) => write!(f, "wref<{}>", inner.as_fmt(ctx)),
-            Self::Array(inner) => write!(f, "array<{}>", inner.as_fmt(ctx)),
-            Self::StaticArray(inner, size) => write!(f, "array<{}; {size}>", inner.as_fmt(ctx)),
-            Self::ScriptRef(inner) => write!(f, "script_ref<{}>", inner.as_fmt(ctx)),
+            Type::Named { name, args } if args.is_empty() => write!(f, "{name}"),
+            Type::Named { name, args } => write!(
+                f,
+                "{}<{}>",
+                name,
+                SepBy(args.iter().map(Wrapper::as_val), ", ", ctx)
+            ),
+            Type::Array(el) => write!(f, "[{}]", el.as_val().as_fmt(ctx)),
+            Type::StaticArray(el, size) => write!(f, "[{}; {}]", el.as_val().as_fmt(ctx), size),
         }
     }
 }

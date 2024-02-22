@@ -266,12 +266,18 @@ impl<'src, W: Wrap> Annotation<'src, W> {
 
 #[derive(Debug, PartialEq)]
 pub enum Type<'src> {
-    Named(&'src str),
-    Ref(Box<Self>),
-    Wref(Box<Self>),
+    Named { name: &'src str, args: Box<[Self]> },
     Array(Box<Self>),
     StaticArray(Box<Self>, usize),
-    ScriptRef(Box<Self>),
+}
+
+impl<'src> Type<'src> {
+    pub fn plain(name: &'src str) -> Self {
+        Self::Named {
+            name,
+            args: Box::new([]),
+        }
+    }
 }
 
 #[derive_where(Debug, PartialEq)]
@@ -467,12 +473,7 @@ pub enum Expr<'src, W: Wrap = Identity> {
         expr: Box<ExprT<'src, W>>,
     },
     Call {
-        name: &'src str,
-        args: Box<[ExprT<'src, W>]>,
-    },
-    MethodCall {
         expr: Box<ExprT<'src, W>>,
-        method: &'src str,
         args: Box<[ExprT<'src, W>]>,
     },
     Member {
@@ -534,17 +535,8 @@ impl<'src, W: Wrap> Expr<'src, W> {
                 op,
                 expr: (*expr).into_val().unwrapped().into(),
             },
-            Expr::Call { name, args } => Expr::Call {
-                name,
-                args: args
-                    .into_vec()
-                    .into_iter()
-                    .map(|a| a.into_val().unwrapped())
-                    .collect(),
-            },
-            Expr::MethodCall { expr, method, args } => Expr::MethodCall {
-                expr: (*expr).into_val().unwrapped().into(),
-                method,
+            Expr::Call { expr: callee, args } => Expr::Call {
+                expr: (*callee).into_val().unwrapped().into(),
                 args: args
                     .into_vec()
                     .into_iter()

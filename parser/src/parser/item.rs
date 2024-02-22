@@ -170,7 +170,6 @@ fn import<'tok, 'src: 'tok>(
     just(Token::Ident("import"))
         .ignore_then(
             ident
-                .clone()
                 .separated_by(just(Token::Period))
                 .at_least(1)
                 .collect::<Vec<_>>()
@@ -279,10 +278,10 @@ mod tests {
                             "Method",
                             [Param::new(
                                 "arg",
-                                Type::Named("Int32"),
+                                Type::plain("Int32"),
                                 ParamQualifiers::OPTIONAL
                             )],
-                            Some(Type::Named("Int32")),
+                            Some(Type::plain("Int32")),
                             Some(Block::single(Stmt::Return(Some(Expr::Ident("arg").into()))))
                         )
                         .into()
@@ -335,7 +334,7 @@ mod tests {
                         [],
                         None,
                         ItemQualifiers::empty(),
-                        Item::Let(Field::new("a", Type::Named("Int32"), None)).into()
+                        Item::Let(Field::new("a", Type::plain("Int32"), None)).into()
                     ),
                     ItemDecl::new(
                         [],
@@ -343,7 +342,7 @@ mod tests {
                         ItemQualifiers::empty(),
                         Item::Let(Field::new(
                             "b",
-                            Type::Named("Int32"),
+                            Type::plain("Int32"),
                             Some(Expr::Constant(Constant::I32(3)))
                         ))
                         .into()
@@ -368,10 +367,10 @@ mod tests {
                     "Test",
                     [Param::new(
                         "arg",
-                        Type::Named("Int32"),
+                        Type::plain("Int32"),
                         ParamQualifiers::empty()
                     )],
-                    Some(Type::Named("Int32")),
+                    Some(Type::plain("Int32")),
                     Some(Block::single(Stmt::Return(Some(Expr::Ident("arg").into()))))
                 )
                 .into()

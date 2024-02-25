@@ -15,6 +15,20 @@ pub fn expr<'tok, 'src: 'tok>(
 pub fn expr_with_span<'tok, 'src: 'tok>(
 ) -> impl Parser<'tok, ParserInput<'tok, 'src>, (SpannedExpr<'src>, Span), ParseError<'tok, 'src>> + Clone
 {
+    inner_expr_with_span()
+        // handle trailing period explicitly because it's a common error
+        .then(just(Token::Period).or_not())
+        .validate(|(exp, period), ctx, errs| {
+            if period.is_some() {
+                errs.emit(Rich::custom(ctx.span(), "unexpected '.'"))
+            };
+            exp
+        })
+}
+
+pub fn inner_expr_with_span<'tok, 'src: 'tok>(
+) -> impl Parser<'tok, ParserInput<'tok, 'src>, (SpannedExpr<'src>, Span), ParseError<'tok, 'src>> + Clone
+{
     recursive(|this| {
         let value = select! {
             Token::Null => Expr::Null,

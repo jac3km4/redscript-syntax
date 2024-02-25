@@ -98,7 +98,7 @@ impl Wrap for WithSpan {
         A: fmt::Debug + PartialEq;
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Error {
     Parse(String, Span),
     Lex(String, Span),

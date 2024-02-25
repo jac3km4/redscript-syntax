@@ -12,6 +12,8 @@ pub fn lex<'src>(
             just("null").to(Token::Null),
             just("this").to(Token::This),
             just("super").to(Token::Super),
+            just("case").to(Token::Case),
+            just("default").to(Token::Default),
         ]);
 
         let num = text::int(10)
@@ -257,6 +259,8 @@ pub enum Token<'src> {
     Null,
     This,
     Super,
+    Case,
+    Default,
 }
 
 impl fmt::Display for Token<'_> {
@@ -330,6 +334,8 @@ impl fmt::Display for Token<'_> {
             Token::Null => write!(f, "null"),
             Token::This => write!(f, "this"),
             Token::Super => write!(f, "super"),
+            Token::Case => write!(f, "case"),
+            Token::Default => write!(f, "default"),
         }
     }
 }

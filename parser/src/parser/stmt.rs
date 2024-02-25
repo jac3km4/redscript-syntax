@@ -32,7 +32,7 @@ pub fn stmt_rec<'tok, 'src: 'tok>(
         .map_with(|stmt, e| (stmt, e.span()))
         .repeated()
         .collect::<Vec<_>>();
-    let cases = just(Token::Ident("case"))
+    let cases = just(Token::Case)
         .ignore_then(expr.clone())
         .then_ignore(just(Token::Colon))
         .then(case_body.clone())
@@ -40,7 +40,7 @@ pub fn stmt_rec<'tok, 'src: 'tok>(
         .repeated()
         .collect::<Vec<_>>()
         .then(
-            just(Token::Ident("default"))
+            just(Token::Default)
                 .ignore_then(just(Token::Colon).ignore_then(case_body))
                 .or_not(),
         )
@@ -106,9 +106,15 @@ pub fn stmt_rec<'tok, 'src: 'tok>(
         .ignore_then(just(Token::Semicolon))
         .map(|_| Stmt::Break);
 
-    let expr_stmt = expr
-        .then_ignore(just(Token::Semicolon))
-        .map(|e| Stmt::Expr(e.into()));
+    let expr_stmt =
+        // handle missing semicolon explicitly because it's a common error
+        expr.then(just(Token::Semicolon).or_not())
+            .validate(|(exp, semi), ctx, errs| {
+                if semi.is_none() {
+                    errs.emit(Rich::custom(ctx.span(), "expected ';'"))
+                };
+                Stmt::Expr(exp.into())
+            });
 
     choice((
         let_,
@@ -127,7 +133,7 @@ pub fn stmt_rec<'tok, 'src: 'tok>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parse_stmt;
+    use crate::{parse_stmt, Error};
 
     use pretty_assertions::assert_eq;
     use redscript_ast::{BinOp, Constant, Expr, Type};
@@ -265,6 +271,39 @@ mod tests {
                 ty: Some(Type::plain("Int32")),
                 value: Some(Expr::Constant(Constant::I32(1)).into()),
             }
+        )
+    }
+
+    #[test]
+    fn missing_semicolon() {
+        let code = "a";
+        let (stmt, errors) = parse_stmt(code);
+
+        assert_eq!(
+            errors,
+            vec![Error::Parse("expected ';'".into(), (0..1).into())]
+        );
+        assert_eq!(
+            stmt.expect("should parse").unwrapped(),
+            Stmt::Expr(Expr::Ident("a").into())
+        )
+    }
+
+    #[test]
+    fn trailing_comma() {
+        let code = "a.";
+        let (stmt, errors) = parse_stmt(code);
+
+        assert_eq!(
+            errors,
+            vec![
+                Error::Parse("unexpected '.'".into(), (0..2).into()),
+                Error::Parse("expected ';'".into(), (0..2).into())
+            ]
+        );
+        assert_eq!(
+            stmt.expect("should parse").unwrapped(),
+            Stmt::Expr(Expr::Ident("a").into())
         )
     }
 }

@@ -203,22 +203,33 @@ impl<W: Wrap> Formattable for Stmt<'_, W> {
                 }
                 writeln!(f, "{}}}", ctx.ws())
             }
-            Stmt::If { cond, then, else_ } => {
-                write!(
-                    f,
-                    "{}if {} {}",
-                    ctx.ws(),
-                    (**cond).as_val().as_fmt(ctx),
-                    then.as_fmt(ctx)
-                )?;
+            Stmt::If { blocks, else_ } => {
+                write!(f, "{}", ctx.ws())?;
+                let mut it = blocks.iter();
+                if let Some(block) = it.next() {
+                    write!(
+                        f,
+                        "if {} {}",
+                        block.cond.as_val().as_fmt(ctx),
+                        block.body.as_fmt(ctx)
+                    )?;
+                }
+                for block in it {
+                    write!(
+                        f,
+                        " else if {} {}",
+                        block.cond.as_val().as_fmt(ctx),
+                        block.body.as_fmt(ctx)
+                    )?;
+                }
                 if let Some(else_) = else_ {
                     write!(f, " else {}", else_.as_fmt(ctx))?;
                 }
                 Ok(())
             }
-            Stmt::While { cond, body } => {
-                write!(f, "{}while {} ", ctx.ws(), (**cond).as_val().as_fmt(ctx))?;
-                writeln!(f, "{}", body.as_fmt(ctx))
+            Stmt::While(block) => {
+                write!(f, "{}while {} ", ctx.ws(), block.cond.as_val().as_fmt(ctx))?;
+                writeln!(f, "{}", block.body.as_fmt(ctx))
             }
             Stmt::ForIn { name, iter, body } => {
                 write!(

@@ -361,14 +361,10 @@ pub enum Stmt<'src, W: Wrap = Identity> {
         default: Option<Box<[StmtT<'src, W>]>>,
     },
     If {
-        cond: Box<ExprT<'src, W>>,
-        then: Block<'src, W>,
+        blocks: Box<[ConditionalBlock<'src, W>]>,
         else_: Option<Block<'src, W>>,
     },
-    While {
-        cond: Box<ExprT<'src, W>>,
-        body: Block<'src, W>,
-    },
+    While(ConditionalBlock<'src, W>),
     ForIn {
         name: &'src str,
         iter: Box<ExprT<'src, W>>,
@@ -405,15 +401,15 @@ impl<'src, W: Wrap> Stmt<'src, W> {
                         .collect()
                 }),
             },
-            Stmt::If { cond, then, else_ } => Stmt::If {
-                cond: (*cond).into_val().unwrapped().into(),
-                then: then.into_val().unwrapped(),
-                else_: else_.map(|e| e.into_val().unwrapped()),
+            Stmt::If { blocks, else_ } => Stmt::If {
+                blocks: blocks
+                    .into_vec()
+                    .into_iter()
+                    .map(|b| b.into_val().unwrapped())
+                    .collect(),
+                else_: else_.map(|b| b.into_val().unwrapped()),
             },
-            Stmt::While { cond, body } => Stmt::While {
-                cond: (*cond).into_val().unwrapped().into(),
-                body: body.into_val().unwrapped(),
-            },
+            Stmt::While(block) => Stmt::While(block.into_val().unwrapped()),
             Stmt::ForIn { name, iter, body } => Stmt::ForIn {
                 name,
                 iter: (*iter).into_val().unwrapped().into(),
@@ -422,6 +418,25 @@ impl<'src, W: Wrap> Stmt<'src, W> {
             Stmt::Return(v) => Stmt::Return(v.map(|v| (*v).into_val().unwrapped().into())),
             Stmt::Break => Stmt::Break,
             Stmt::Expr(e) => Stmt::Expr((*e).into_val().unwrapped().into()),
+        }
+    }
+}
+
+#[derive_where(Debug, PartialEq)]
+pub struct ConditionalBlock<'src, W: Wrap = Identity> {
+    pub cond: ExprT<'src, W>,
+    pub body: Block<'src, W>,
+}
+
+impl<'src, W: Wrap> ConditionalBlock<'src, W> {
+    pub fn new(cond: ExprT<'src, W>, body: Block<'src, W>) -> Self {
+        Self { cond, body }
+    }
+
+    pub fn unwrapped(self) -> ConditionalBlock<'src> {
+        ConditionalBlock {
+            cond: self.cond.into_val().unwrapped(),
+            body: self.body.into_val().unwrapped(),
         }
     }
 }

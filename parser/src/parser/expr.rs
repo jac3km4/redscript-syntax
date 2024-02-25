@@ -20,7 +20,7 @@ pub fn expr_with_span<'tok, 'src: 'tok>(
         .then(just(Token::Period).or_not())
         .validate(|(exp, period), ctx, errs| {
             if period.is_some() {
-                errs.emit(Rich::custom(ctx.span(), "unexpected '.'"))
+                errs.emit(Rich::custom(ctx.span(), "unexpected '.'"));
             };
             exp
         })

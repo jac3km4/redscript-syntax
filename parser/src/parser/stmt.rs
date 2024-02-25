@@ -1,6 +1,8 @@
+use std::iter;
+
 use crate::{lexer::Token, SpannedStmt};
 use chumsky::prelude::*;
-use redscript_ast::{Block, Case, Stmt};
+use redscript_ast::{Case, ConditionalBlock, Stmt};
 
 use super::{block_rec, expr::expr_with_span, ident, type_with_span, ParseError, ParserInput};
 
@@ -56,35 +58,24 @@ pub fn stmt_rec<'tok, 'src: 'tok>(
             default: default.map(Into::into),
         });
 
-    let if_ = just(Token::Ident("if")).ignore_then(expr.clone().then(block.clone()));
-    let else_chain = just(Token::Ident("else"))
-        .ignore_then(if_.clone())
-        .repeated()
-        .foldr_with(
-            just(Token::Ident("else"))
-                .ignore_then(block.clone())
-                .or_not(),
-            |(cond, then), else_, e| {
-                let cond = Box::new(cond);
-                Some(Block::single((Stmt::If { cond, then, else_ }, e.span())))
-            },
-        );
-
+    let if_ = just(Token::Ident("if"))
+        .ignore_then(expr.clone().then(block.clone()))
+        .map(|(cond, body)| ConditionalBlock::new(cond, body));
+    let else_if = just(Token::Ident("else")).ignore_then(if_.clone());
+    let else_ = just(Token::Ident("else")).ignore_then(block.clone());
     let if_stmt = if_
-        .then(else_chain)
+        .then(else_if.repeated().collect::<Vec<_>>())
+        .then(else_.or_not())
         .then_ignore(just(Token::Semicolon).or_not())
-        .map(|((cond, then), else_)| {
-            let cond = Box::new(cond);
-            Stmt::If { cond, then, else_ }
+        .map(|((if_, else_ifs), else_)| Stmt::If {
+            blocks: iter::once(if_).chain(else_ifs).collect(),
+            else_,
         });
 
     let while_stmt = just(Token::Ident("while"))
         .ignore_then(expr.clone().then(block.clone()))
         .then_ignore(just(Token::Semicolon).or_not())
-        .map(|(cond, body)| {
-            let cond = Box::new(cond);
-            Stmt::While { cond, body }
-        });
+        .map(|(cond, body)| Stmt::While(ConditionalBlock::new(cond, body)));
 
     let for_stmt = just(Token::Ident("for"))
         .ignore_then(ident)
@@ -111,7 +102,7 @@ pub fn stmt_rec<'tok, 'src: 'tok>(
         expr.then(just(Token::Semicolon).or_not())
             .validate(|(exp, semi), ctx, errs| {
                 if semi.is_none() {
-                    errs.emit(Rich::custom(ctx.span(), "expected ';'"))
+                    errs.emit(Rich::custom(ctx.span(), "expected ';'"));
                 };
                 Stmt::Expr(exp.into())
             });
@@ -136,7 +127,7 @@ mod tests {
     use crate::{parse_stmt, Error};
 
     use pretty_assertions::assert_eq;
-    use redscript_ast::{BinOp, Constant, Expr, Type};
+    use redscript_ast::{BinOp, Block, Constant, Expr, Type};
 
     #[test]
     fn if_else_chain() {
@@ -153,17 +144,20 @@ mod tests {
         assert_eq!(
             parse_stmt(code).0.unwrap().unwrapped(),
             Stmt::If {
-                cond: Expr::Constant(Constant::Bool(true)).into(),
-                then: Block::single(Stmt::Return(Some(Expr::Constant(Constant::I32(1)).into()))),
-                else_: Some(Block::single(Stmt::If {
-                    cond: Expr::Constant(Constant::Bool(false)).into(),
-                    then: Block::single(Stmt::Return(Some(
-                        Expr::Constant(Constant::I32(2)).into()
-                    ))),
-                    else_: Some(Block::single(Stmt::Return(Some(
-                        Expr::Constant(Constant::I32(3)).into()
-                    )))),
-                })),
+                blocks: [
+                    ConditionalBlock::new(
+                        Expr::Constant(Constant::Bool(true)).into(),
+                        Block::single(Stmt::Return(Some(Expr::Constant(Constant::I32(1)).into())))
+                    ),
+                    ConditionalBlock::new(
+                        Expr::Constant(Constant::Bool(false)).into(),
+                        Block::single(Stmt::Return(Some(Expr::Constant(Constant::I32(2)).into())))
+                    ),
+                ]
+                .into(),
+                else_: Some(Block::single(Stmt::Return(Some(
+                    Expr::Constant(Constant::I32(3)).into()
+                )))),
             }
         );
     }
@@ -208,14 +202,13 @@ mod tests {
 
         assert_eq!(
             parse_stmt(code).0.unwrap().unwrapped(),
-            Stmt::While {
-                cond: Expr::BinOp {
+            Stmt::While(ConditionalBlock::new(
+                Expr::BinOp {
                     op: BinOp::Gt,
                     lhs: Box::new(Expr::Ident("i")),
                     rhs: Box::new(Expr::Constant(Constant::I32(0))),
-                }
-                .into(),
-                body: Block::single(Stmt::Expr(
+                },
+                Block::single(Stmt::Expr(
                     Expr::Assign {
                         lhs: Box::new(Expr::Ident("i")),
                         rhs: Box::new(Expr::BinOp {
@@ -225,9 +218,9 @@ mod tests {
                         }),
                     }
                     .into()
-                )),
-            }
-        );
+                ))
+            ))
+        )
     }
 
     #[test]

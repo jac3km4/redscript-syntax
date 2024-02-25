@@ -2,9 +2,9 @@ use std::fmt;
 
 use pretty_dtoa::{dtoa, ftoa, FmtFloatConfig};
 use redscript_ast::{
-    Aggregate, Annotation, BinOp, Block, Constant, Enum, EnumVariant, Expr, Field, Function,
-    Import, Item, ItemDecl, ItemQualifiers, Module, Param, ParamQualifiers, Path, Stmt, StrPart,
-    Type, UnOp, Visibility, Wrap, Wrapper,
+    Aggregate, Annotation, AstKind, BinOp, Block, Constant, Enum, EnumVariant, Expr, Field,
+    Function, Import, Item, ItemDecl, ItemQualifiers, Module, Param, ParamQualifiers, Path, Stmt,
+    StrPart, Type, UnOp, Visibility, Wrapper,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -40,7 +40,7 @@ pub trait Formattable: Sized {
     }
 }
 
-impl<W: Wrap> Formattable for Item<'_, W> {
+impl<K: AstKind> Formattable for Item<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         match self {
             Item::Import(import) => write!(f, "{}", import.as_fmt(ctx)),
@@ -53,7 +53,7 @@ impl<W: Wrap> Formattable for Item<'_, W> {
     }
 }
 
-impl<W: Wrap> Formattable for Module<'_, W> {
+impl<K: AstKind> Formattable for Module<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         if let Some(path) = &self.path {
             writeln!(f, "module {}", path.as_fmt(ctx))?;
@@ -65,7 +65,7 @@ impl<W: Wrap> Formattable for Module<'_, W> {
     }
 }
 
-impl<W: Wrap> Formattable for ItemDecl<'_, W> {
+impl<K: AstKind> Formattable for ItemDecl<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         for ann in &self.annotations[..] {
             writeln!(f, "{}{}", ctx.ws(), ann.as_val().as_fmt(ctx))?;
@@ -98,7 +98,7 @@ impl Formattable for Import<'_> {
     }
 }
 
-impl<W: Wrap> Formattable for Aggregate<'_, W> {
+impl<K: AstKind> Formattable for Aggregate<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         writeln!(f, "{} {{", self.name)?;
         for item in &self.items[..] {
@@ -108,7 +108,7 @@ impl<W: Wrap> Formattable for Aggregate<'_, W> {
     }
 }
 
-impl<W: Wrap> Formattable for Field<'_, W> {
+impl<K: AstKind> Formattable for Field<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         write!(f, "let {}: {}", self.name, self.ty.as_val().as_fmt(ctx))?;
         if let Some(value) = &self.default {
@@ -118,7 +118,7 @@ impl<W: Wrap> Formattable for Field<'_, W> {
     }
 }
 
-impl<W: Wrap> Formattable for Function<'_, W> {
+impl<K: AstKind> Formattable for Function<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         write!(
             f,
@@ -137,7 +137,7 @@ impl<W: Wrap> Formattable for Function<'_, W> {
     }
 }
 
-impl<W: Wrap> Formattable for Enum<'_, W> {
+impl<K: AstKind> Formattable for Enum<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         writeln!(f, "enum {} {{", self.name)?;
         for variant in &self.variants[..] {
@@ -158,7 +158,7 @@ impl Formattable for EnumVariant<'_> {
     }
 }
 
-impl<W: Wrap> Formattable for Block<'_, W> {
+impl<K: AstKind> Formattable for Block<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         writeln!(f, "{{")?;
         for stmt in &self.stmts[..] {
@@ -168,7 +168,7 @@ impl<W: Wrap> Formattable for Block<'_, W> {
     }
 }
 
-impl<W: Wrap> Formattable for Stmt<'_, W> {
+impl<K: AstKind> Formattable for Stmt<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         match self {
             Stmt::Let { name, ty, value } => {
@@ -255,7 +255,7 @@ impl<W: Wrap> Formattable for Stmt<'_, W> {
     }
 }
 
-impl<W: Wrap> Formattable for Expr<'_, W> {
+impl<K: AstKind> Formattable for Expr<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         match self {
             Expr::Ident(name) => write!(f, "{name}"),
@@ -378,7 +378,7 @@ impl<W: Wrap> Formattable for Expr<'_, W> {
     }
 }
 
-impl<W: Wrap> Formattable for Param<'_, W> {
+impl<K: AstKind> Formattable for Param<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         if self.qualifiers.contains(ParamQualifiers::OUT) {
             write!(f, "out ")?;
@@ -409,7 +409,7 @@ impl Formattable for Type<'_> {
     }
 }
 
-impl<W: Wrap> Formattable for Annotation<'_, W> {
+impl<K: AstKind> Formattable for Annotation<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         write!(
             f,

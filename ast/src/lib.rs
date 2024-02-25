@@ -3,21 +3,21 @@ use std::{borrow::Cow, fmt};
 use bitflags::bitflags;
 use derive_where::derive_where;
 
-type AnnotationT<'src, A> = <A as Wrap>::Inner<Annotation<'src, A>>;
-type ExprT<'src, A> = <A as Wrap>::Inner<Expr<'src, A>>;
-type ItemDeclT<'src, A> = <A as Wrap>::Inner<ItemDecl<'src, A>>;
-type ParamT<'src, A> = <A as Wrap>::Inner<Param<'src, A>>;
-type StmtT<'src, A> = <A as Wrap>::Inner<Stmt<'src, A>>;
-type TypeT<'src, A> = <A as Wrap>::Inner<Type<'src>>;
+type AnnotationT<'src, A> = <A as AstKind>::Inner<Annotation<'src, A>>;
+type ExprT<'src, A> = <A as AstKind>::Inner<Expr<'src, A>>;
+type ItemDeclT<'src, A> = <A as AstKind>::Inner<ItemDecl<'src, A>>;
+type ParamT<'src, A> = <A as AstKind>::Inner<Param<'src, A>>;
+type StmtT<'src, A> = <A as AstKind>::Inner<Stmt<'src, A>>;
+type TypeT<'src, A> = <A as AstKind>::Inner<Type<'src>>;
 
 #[derive_where(Debug, PartialEq)]
-pub struct Module<'src, W: Wrap = Identity> {
+pub struct Module<'src, K: AstKind = Identity> {
     pub path: Option<Path<'src>>,
-    pub items: Box<[ItemDeclT<'src, W>]>,
+    pub items: Box<[ItemDeclT<'src, K>]>,
 }
 
-impl<'src, W: Wrap> Module<'src, W> {
-    pub fn new(path: Option<Path<'src>>, items: impl Into<Box<[ItemDeclT<'src, W>]>>) -> Self {
+impl<'src, K: AstKind> Module<'src, K> {
+    pub fn new(path: Option<Path<'src>>, items: impl Into<Box<[ItemDeclT<'src, K>]>>) -> Self {
         Self {
             path,
             items: items.into(),
@@ -45,19 +45,19 @@ pub enum Import<'src> {
 }
 
 #[derive_where(Debug, PartialEq)]
-pub struct ItemDecl<'src, W: Wrap = Identity> {
-    pub annotations: Box<[AnnotationT<'src, W>]>,
+pub struct ItemDecl<'src, K: AstKind = Identity> {
+    pub annotations: Box<[AnnotationT<'src, K>]>,
     pub visibility: Option<Visibility>,
     pub qualifiers: ItemQualifiers,
-    pub item: Item<'src, W>,
+    pub item: Item<'src, K>,
 }
 
-impl<'src, W: Wrap> ItemDecl<'src, W> {
+impl<'src, K: AstKind> ItemDecl<'src, K> {
     pub fn new(
-        annotations: impl Into<Box<[AnnotationT<'src, W>]>>,
+        annotations: impl Into<Box<[AnnotationT<'src, K>]>>,
         visibility: Option<Visibility>,
         qualifiers: ItemQualifiers,
-        item: Item<'src, W>,
+        item: Item<'src, K>,
     ) -> Self {
         Self {
             annotations: annotations.into(),
@@ -83,16 +83,16 @@ impl<'src, W: Wrap> ItemDecl<'src, W> {
 }
 
 #[derive_where(Debug, PartialEq)]
-pub enum Item<'src, W: Wrap = Identity> {
+pub enum Item<'src, K: AstKind = Identity> {
     Import(Import<'src>),
-    Class(Aggregate<'src, W>),
-    Struct(Aggregate<'src, W>),
-    Function(Function<'src, W>),
-    Let(Field<'src, W>),
-    Enum(Enum<'src, W>),
+    Class(Aggregate<'src, K>),
+    Struct(Aggregate<'src, K>),
+    Function(Function<'src, K>),
+    Let(Field<'src, K>),
+    Enum(Enum<'src, K>),
 }
 
-impl<'src, W: Wrap> Item<'src, W> {
+impl<'src, K: AstKind> Item<'src, K> {
     pub fn unwrapped(self) -> Item<'src> {
         match self {
             Item::Import(i) => Item::Import(i),
@@ -106,17 +106,17 @@ impl<'src, W: Wrap> Item<'src, W> {
 }
 
 #[derive_where(Debug, PartialEq)]
-pub struct Aggregate<'src, W: Wrap = Identity> {
+pub struct Aggregate<'src, K: AstKind = Identity> {
     pub name: &'src str,
     pub extends: Option<&'src str>,
-    pub items: Box<[ItemDeclT<'src, W>]>,
+    pub items: Box<[ItemDeclT<'src, K>]>,
 }
 
-impl<'src, W: Wrap> Aggregate<'src, W> {
+impl<'src, K: AstKind> Aggregate<'src, K> {
     pub fn new(
         name: &'src str,
         extends: Option<&'src str>,
-        items: impl Into<Box<[ItemDeclT<'src, W>]>>,
+        items: impl Into<Box<[ItemDeclT<'src, K>]>>,
     ) -> Self {
         Self {
             name,
@@ -140,14 +140,14 @@ impl<'src, W: Wrap> Aggregate<'src, W> {
 }
 
 #[derive_where(Debug, PartialEq)]
-pub struct Field<'src, W: Wrap = Identity> {
+pub struct Field<'src, K: AstKind = Identity> {
     pub name: &'src str,
-    pub ty: TypeT<'src, W>,
-    pub default: Option<ExprT<'src, W>>,
+    pub ty: TypeT<'src, K>,
+    pub default: Option<ExprT<'src, K>>,
 }
 
-impl<'src, W: Wrap> Field<'src, W> {
-    pub fn new(name: &'src str, ty: TypeT<'src, W>, default: Option<ExprT<'src, W>>) -> Self {
+impl<'src, K: AstKind> Field<'src, K> {
+    pub fn new(name: &'src str, ty: TypeT<'src, K>, default: Option<ExprT<'src, K>>) -> Self {
         Self { name, ty, default }
     }
 
@@ -161,19 +161,19 @@ impl<'src, W: Wrap> Field<'src, W> {
 }
 
 #[derive_where(Debug, PartialEq)]
-pub struct Function<'src, W: Wrap = Identity> {
+pub struct Function<'src, K: AstKind = Identity> {
     pub name: &'src str,
-    pub params: Box<[ParamT<'src, W>]>,
-    pub return_ty: Option<TypeT<'src, W>>,
-    pub body: Option<Block<'src, W>>,
+    pub params: Box<[ParamT<'src, K>]>,
+    pub return_ty: Option<TypeT<'src, K>>,
+    pub body: Option<Block<'src, K>>,
 }
 
-impl<'src, W: Wrap> Function<'src, W> {
+impl<'src, K: AstKind> Function<'src, K> {
     pub fn new(
         name: &'src str,
-        params: impl Into<Box<[ParamT<'src, W>]>>,
-        return_ty: Option<TypeT<'src, W>>,
-        body: Option<Block<'src, W>>,
+        params: impl Into<Box<[ParamT<'src, K>]>>,
+        return_ty: Option<TypeT<'src, K>>,
+        body: Option<Block<'src, K>>,
     ) -> Self {
         Self {
             name,
@@ -199,13 +199,13 @@ impl<'src, W: Wrap> Function<'src, W> {
 }
 
 #[derive_where(Debug, PartialEq)]
-pub struct Enum<'src, W: Wrap = Identity> {
+pub struct Enum<'src, K: AstKind = Identity> {
     pub name: &'src str,
-    pub variants: Box<[W::Inner<EnumVariant<'src>>]>,
+    pub variants: Box<[K::Inner<EnumVariant<'src>>]>,
 }
 
-impl<'src, W: Wrap> Enum<'src, W> {
-    pub fn new(name: &'src str, variants: impl Into<Box<[W::Inner<EnumVariant<'src>>]>>) -> Self {
+impl<'src, K: AstKind> Enum<'src, K> {
+    pub fn new(name: &'src str, variants: impl Into<Box<[K::Inner<EnumVariant<'src>>]>>) -> Self {
         Self {
             name,
             variants: variants.into(),
@@ -238,13 +238,13 @@ impl<'src> EnumVariant<'src> {
 }
 
 #[derive_where(Debug, PartialEq)]
-pub struct Annotation<'src, W: Wrap = Identity> {
+pub struct Annotation<'src, K: AstKind = Identity> {
     pub name: &'src str,
-    pub args: Box<[ExprT<'src, W>]>,
+    pub args: Box<[ExprT<'src, K>]>,
 }
 
-impl<'src, W: Wrap> Annotation<'src, W> {
-    pub fn new(name: &'src str, args: impl Into<Box<[ExprT<'src, W>]>>) -> Self {
+impl<'src, K: AstKind> Annotation<'src, K> {
+    pub fn new(name: &'src str, args: impl Into<Box<[ExprT<'src, K>]>>) -> Self {
         Self {
             name,
             args: args.into(),
@@ -281,14 +281,14 @@ impl<'src> Type<'src> {
 }
 
 #[derive_where(Debug, PartialEq)]
-pub struct Param<'src, W: Wrap = Identity> {
+pub struct Param<'src, K: AstKind = Identity> {
     pub name: &'src str,
-    pub ty: TypeT<'src, W>,
+    pub ty: TypeT<'src, K>,
     pub qualifiers: ParamQualifiers,
 }
 
-impl<'src, W: Wrap> Param<'src, W> {
-    pub fn new(name: &'src str, ty: TypeT<'src, W>, qualifiers: ParamQualifiers) -> Self {
+impl<'src, K: AstKind> Param<'src, K> {
+    pub fn new(name: &'src str, ty: TypeT<'src, K>, qualifiers: ParamQualifiers) -> Self {
         Self {
             name,
             ty,
@@ -319,18 +319,18 @@ impl<'src> Path<'src> {
 }
 
 #[derive_where(Debug, PartialEq)]
-pub struct Block<'src, W: Wrap = Identity> {
-    pub stmts: Box<[StmtT<'src, W>]>,
+pub struct Block<'src, K: AstKind = Identity> {
+    pub stmts: Box<[StmtT<'src, K>]>,
 }
 
-impl<'src, W: Wrap> Block<'src, W> {
-    pub fn new(stmts: impl Into<Box<[StmtT<'src, W>]>>) -> Self {
+impl<'src, K: AstKind> Block<'src, K> {
+    pub fn new(stmts: impl Into<Box<[StmtT<'src, K>]>>) -> Self {
         Self {
             stmts: stmts.into(),
         }
     }
 
-    pub fn single(stmt: StmtT<'src, W>) -> Self {
+    pub fn single(stmt: StmtT<'src, K>) -> Self {
         Self {
             stmts: [stmt].into(),
         }
@@ -349,33 +349,33 @@ impl<'src, W: Wrap> Block<'src, W> {
 }
 
 #[derive_where(Debug, PartialEq)]
-pub enum Stmt<'src, W: Wrap = Identity> {
+pub enum Stmt<'src, K: AstKind = Identity> {
     Let {
         name: &'src str,
-        ty: Option<TypeT<'src, W>>,
-        value: Option<Box<ExprT<'src, W>>>,
+        ty: Option<TypeT<'src, K>>,
+        value: Option<Box<ExprT<'src, K>>>,
     },
     Switch {
-        expr: Box<ExprT<'src, W>>,
-        cases: Box<[Case<'src, W>]>,
-        default: Option<Box<[StmtT<'src, W>]>>,
+        expr: Box<ExprT<'src, K>>,
+        cases: Box<[Case<'src, K>]>,
+        default: Option<Box<[StmtT<'src, K>]>>,
     },
     If {
-        blocks: Box<[ConditionalBlock<'src, W>]>,
-        else_: Option<Block<'src, W>>,
+        blocks: Box<[ConditionalBlock<'src, K>]>,
+        else_: Option<Block<'src, K>>,
     },
-    While(ConditionalBlock<'src, W>),
+    While(ConditionalBlock<'src, K>),
     ForIn {
         name: &'src str,
-        iter: Box<ExprT<'src, W>>,
-        body: Block<'src, W>,
+        iter: Box<ExprT<'src, K>>,
+        body: Block<'src, K>,
     },
-    Return(Option<Box<ExprT<'src, W>>>),
+    Return(Option<Box<ExprT<'src, K>>>),
     Break,
-    Expr(Box<ExprT<'src, W>>),
+    Expr(Box<ExprT<'src, K>>),
 }
 
-impl<'src, W: Wrap> Stmt<'src, W> {
+impl<'src, K: AstKind> Stmt<'src, K> {
     pub fn unwrapped(self) -> Stmt<'src> {
         match self {
             Stmt::Let { name, ty, value } => Stmt::Let {
@@ -423,13 +423,13 @@ impl<'src, W: Wrap> Stmt<'src, W> {
 }
 
 #[derive_where(Debug, PartialEq)]
-pub struct ConditionalBlock<'src, W: Wrap = Identity> {
-    pub cond: ExprT<'src, W>,
-    pub body: Block<'src, W>,
+pub struct ConditionalBlock<'src, K: AstKind = Identity> {
+    pub cond: ExprT<'src, K>,
+    pub body: Block<'src, K>,
 }
 
-impl<'src, W: Wrap> ConditionalBlock<'src, W> {
-    pub fn new(cond: ExprT<'src, W>, body: Block<'src, W>) -> Self {
+impl<'src, K: AstKind> ConditionalBlock<'src, K> {
+    pub fn new(cond: ExprT<'src, K>, body: Block<'src, K>) -> Self {
         Self { cond, body }
     }
 
@@ -442,13 +442,13 @@ impl<'src, W: Wrap> ConditionalBlock<'src, W> {
 }
 
 #[derive_where(Debug, PartialEq)]
-pub struct Case<'src, W: Wrap = Identity> {
-    pub label: ExprT<'src, W>,
-    pub body: Box<[StmtT<'src, W>]>,
+pub struct Case<'src, K: AstKind = Identity> {
+    pub label: ExprT<'src, K>,
+    pub body: Box<[StmtT<'src, K>]>,
 }
 
-impl<'src, W: Wrap> Case<'src, W> {
-    pub fn new(label: ExprT<'src, W>, body: impl Into<Box<[StmtT<'src, W>]>>) -> Self {
+impl<'src, K: AstKind> Case<'src, K> {
+    pub fn new(label: ExprT<'src, K>, body: impl Into<Box<[StmtT<'src, K>]>>) -> Self {
         Self {
             label,
             body: body.into(),
@@ -469,48 +469,48 @@ impl<'src, W: Wrap> Case<'src, W> {
 }
 
 #[derive_where(Debug, PartialEq)]
-pub enum Expr<'src, W: Wrap = Identity> {
+pub enum Expr<'src, K: AstKind = Identity> {
     Ident(&'src str),
     Constant(Constant<'src>),
-    ArrayLit(Box<[ExprT<'src, W>]>),
-    InterpolatedString(Box<[StrPart<'src, W>]>),
+    ArrayLit(Box<[ExprT<'src, K>]>),
+    InterpolatedString(Box<[StrPart<'src, K>]>),
     Assign {
-        lhs: Box<ExprT<'src, W>>,
-        rhs: Box<ExprT<'src, W>>,
+        lhs: Box<ExprT<'src, K>>,
+        rhs: Box<ExprT<'src, K>>,
     },
     BinOp {
-        lhs: Box<ExprT<'src, W>>,
+        lhs: Box<ExprT<'src, K>>,
         op: BinOp,
-        rhs: Box<ExprT<'src, W>>,
+        rhs: Box<ExprT<'src, K>>,
     },
     UnOp {
         op: UnOp,
-        expr: Box<ExprT<'src, W>>,
+        expr: Box<ExprT<'src, K>>,
     },
     Call {
-        expr: Box<ExprT<'src, W>>,
-        args: Box<[ExprT<'src, W>]>,
+        expr: Box<ExprT<'src, K>>,
+        args: Box<[ExprT<'src, K>]>,
     },
     Member {
-        expr: Box<ExprT<'src, W>>,
+        expr: Box<ExprT<'src, K>>,
         member: &'src str,
     },
     Index {
-        expr: Box<ExprT<'src, W>>,
-        index: Box<ExprT<'src, W>>,
+        expr: Box<ExprT<'src, K>>,
+        index: Box<ExprT<'src, K>>,
     },
     DynCast {
-        expr: Box<ExprT<'src, W>>,
-        ty: TypeT<'src, W>,
+        expr: Box<ExprT<'src, K>>,
+        ty: TypeT<'src, K>,
     },
     New {
-        ty: TypeT<'src, W>,
-        args: Box<[ExprT<'src, W>]>,
+        ty: TypeT<'src, K>,
+        args: Box<[ExprT<'src, K>]>,
     },
     Conditional {
-        cond: Box<ExprT<'src, W>>,
-        then: Box<ExprT<'src, W>>,
-        else_: Box<ExprT<'src, W>>,
+        cond: Box<ExprT<'src, K>>,
+        then: Box<ExprT<'src, K>>,
+        else_: Box<ExprT<'src, K>>,
     },
     This,
     Super,
@@ -519,7 +519,7 @@ pub enum Expr<'src, W: Wrap = Identity> {
     Error,
 }
 
-impl<'src, W: Wrap> Expr<'src, W> {
+impl<'src, K: AstKind> Expr<'src, K> {
     pub fn unwrapped(self) -> Expr<'src> {
         match self {
             Expr::Ident(i) => Expr::Ident(i),
@@ -607,12 +607,12 @@ pub enum Constant<'src> {
 }
 
 #[derive_where(Debug, PartialEq)]
-pub enum StrPart<'src, W: Wrap = Identity> {
-    Expr(ExprT<'src, W>),
+pub enum StrPart<'src, K: AstKind = Identity> {
+    Expr(ExprT<'src, K>),
     Str(Cow<'src, str>),
 }
 
-impl<'src, W: Wrap> StrPart<'src, W> {
+impl<'src, K: AstKind> StrPart<'src, K> {
     pub fn unwrapped(self) -> StrPart<'src> {
         match self {
             StrPart::Expr(e) => StrPart::Expr(e.into_val().unwrapped()),
@@ -742,7 +742,7 @@ bitflags! {
 
 }
 
-pub trait Wrap {
+pub trait AstKind {
     type Inner<A>: Wrapper<A> + fmt::Debug + PartialEq
     where
         A: fmt::Debug + PartialEq;
@@ -750,7 +750,7 @@ pub trait Wrap {
 
 pub struct Identity;
 
-impl Wrap for Identity {
+impl AstKind for Identity {
     type Inner<A> = A
     where
         A: fmt::Debug + PartialEq;

@@ -7,8 +7,8 @@ use chumsky::prelude::*;
 use lexer::Token;
 use parser::{ParseError, ParserInput};
 use redscript_ast::{
-    Aggregate, Annotation, Block, Case, Enum, Expr, Field, Function, Item, ItemDecl, Module, Param,
-    Stmt, Wrap,
+    Aggregate, Annotation, AstKind, Block, Case, Enum, Expr, Field, Function, Item, ItemDecl,
+    Module, Param, Stmt,
 };
 
 pub type Span = SimpleSpan;
@@ -92,7 +92,7 @@ fn parser_input<'tok, 'src>(tokens: &'tok [(Token<'src>, Span)]) -> ParserInput<
 
 pub struct WithSpan;
 
-impl Wrap for WithSpan {
+impl AstKind for WithSpan {
     type Inner<A> = Spanned<A>
     where
         A: fmt::Debug + PartialEq;

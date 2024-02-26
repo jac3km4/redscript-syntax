@@ -6,16 +6,6 @@ use chumsky::{container::Container, input::InputRef, prelude::*};
 pub fn lex<'src>(
 ) -> impl Parser<'src, &'src str, Vec<(Token<'src>, Span)>, extra::Err<Rich<'src, char, Span>>> {
     recursive(|this| {
-        let kw = choice([
-            just("true").to(Token::True),
-            just("false").to(Token::False),
-            just("null").to(Token::Null),
-            just("this").to(Token::This),
-            just("super").to(Token::Super),
-            just("case").to(Token::Case),
-            just("default").to(Token::Default),
-        ]);
-
         let num = text::int(10)
             .then(just('.').then(text::digits(10).or_not()).or_not())
             .to_slice()
@@ -108,7 +98,16 @@ pub fn lex<'src>(
             )
             .map(|ps| Token::InterpStr(ps.into()));
 
-        let ident = text::ascii::ident().map(Token::Ident);
+        let word = text::ascii::ident().map(|str| match str {
+            "true" => Token::True,
+            "false" => Token::False,
+            "null" => Token::Null,
+            "this" => Token::This,
+            "super" => Token::Super,
+            "case" => Token::Case,
+            "default" => Token::Default,
+            other => Token::Ident(other),
+        });
 
         let line_comment = just("//")
             .ignored()
@@ -129,7 +128,7 @@ pub fn lex<'src>(
 
         let comment = line_comment.or(block_comment);
 
-        choice((symbol(), kw, num, str, interp_str, ident))
+        choice((str, interp_str, word, symbol(), num))
             .padded_by(comment.repeated())
             .padded()
             .recover_with(skip_then_retry_until(any().ignored(), end()))

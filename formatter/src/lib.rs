@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, mem};
 
 use pretty_dtoa::{dtoa, ftoa, FmtFloatConfig};
 use redscript_ast::{
@@ -58,10 +58,8 @@ impl<K: AstKind> Formattable for Module<'_, K> {
         if let Some(path) = &self.path {
             writeln!(f, "module {}", path.as_fmt(ctx))?;
         }
-        for item in &self.items[..] {
-            writeln!(f, "{}", item.as_val().as_fmt(ctx))?;
-        }
-        Ok(())
+        writeln!(f)?;
+        format_items(self.items.iter().map(Wrapper::as_val), f, ctx)
     }
 }
 
@@ -101,9 +99,7 @@ impl Formattable for Import<'_> {
 impl<K: AstKind> Formattable for Aggregate<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         writeln!(f, "{} {{", self.name)?;
-        for item in &self.items[..] {
-            writeln!(f, "{}", item.as_val().as_fmt(ctx.bump(1)))?;
-        }
+        format_items(self.items.iter().map(Wrapper::as_val), f, ctx.bump(1))?;
         write!(f, "{}}}", ctx.ws())
     }
 }
@@ -161,9 +157,7 @@ impl Formattable for EnumVariant<'_> {
 impl<K: AstKind> Formattable for Block<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         writeln!(f, "{{")?;
-        for stmt in &self.stmts[..] {
-            writeln!(f, "{}", stmt.as_val().as_fmt(ctx.bump(1)))?;
-        }
+        format_stmts(self.stmts.iter().map(Wrapper::as_val), f, ctx.bump(1))?;
         write!(f, "{}}}", ctx.ws())
     }
 }
@@ -229,7 +223,7 @@ impl<K: AstKind> Formattable for Stmt<'_, K> {
             }
             Stmt::While(block) => {
                 write!(f, "{}while {} ", ctx.ws(), block.cond.as_val().as_fmt(ctx))?;
-                writeln!(f, "{}", block.body.as_fmt(ctx))
+                write!(f, "{}", block.body.as_fmt(ctx))
             }
             Stmt::ForIn { name, iter, body } => {
                 write!(
@@ -239,7 +233,7 @@ impl<K: AstKind> Formattable for Stmt<'_, K> {
                     name,
                     (**iter).as_val().as_fmt(ctx)
                 )?;
-                writeln!(f, "{}", body.as_fmt(ctx))
+                write!(f, "{}", body.as_fmt(ctx))
             }
             Stmt::Return(Some(expr)) => {
                 write!(f, "{}return {};", ctx.ws(), (**expr).as_val().as_fmt(ctx))
@@ -573,4 +567,54 @@ impl<A: Formattable> Formattable for &A {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         (*self).format(f, ctx)
     }
+}
+
+fn format_items<'a, 'c: 'a, K: AstKind + 'a>(
+    items: impl IntoIterator<Item = &'a ItemDecl<'c, K>>,
+    f: &mut fmt::Formatter<'_>,
+    ctx: FormatCtx<'_>,
+) -> fmt::Result {
+    let mut it = items.into_iter();
+    let Some(first) = it.next() else {
+        return Ok(());
+    };
+    let mut discriminant = mem::discriminant(&first.item);
+    write!(f, "{}", first.as_fmt(ctx))?;
+
+    for decl in it {
+        let decl = decl.as_val();
+        if !matches!(decl.item, Item::Import(_) | Item::Let(_))
+            || discriminant != mem::discriminant(&decl.item)
+        {
+            writeln!(f)?;
+        }
+        discriminant = mem::discriminant(&decl.item);
+        write!(f, "{}", decl.as_fmt(ctx))?;
+    }
+
+    Ok(())
+}
+
+fn format_stmts<'a, 'c: 'a, K: AstKind + 'a>(
+    stmts: impl IntoIterator<Item = &'a Stmt<'c, K>>,
+    f: &mut fmt::Formatter<'_>,
+    ctx: FormatCtx<'_>,
+) -> fmt::Result {
+    let mut it = stmts.into_iter();
+    let Some(first) = it.next() else {
+        return Ok(());
+    };
+    writeln!(f, "{}", first.as_fmt(ctx))?;
+
+    for stmt in it {
+        if matches!(
+            stmt,
+            Stmt::Switch { .. } | Stmt::While { .. } | Stmt::ForIn { .. } | Stmt::Return(_)
+        ) {
+            writeln!(f)?;
+        }
+        writeln!(f, "{}", stmt.as_fmt(ctx))?;
+    }
+
+    Ok(())
 }

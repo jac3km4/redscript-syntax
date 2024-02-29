@@ -274,7 +274,7 @@ mod tests {
             errors,
             vec![Error::Parse(
                 "expected ';'".into(),
-                Span::from((file, 0..1))
+                Span::from((file, 1..1))
             )]
         );
         assert_eq!(
@@ -293,7 +293,7 @@ mod tests {
             errors,
             vec![
                 Error::Parse("unexpected '.'".into(), Span::from((file, 0..2))),
-                Error::Parse("expected ';'".into(), Span::from((file, 0..2)))
+                Error::Parse("expected ';'".into(), Span::from((file, 2..2)))
             ]
         );
         assert_eq!(

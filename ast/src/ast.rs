@@ -167,7 +167,7 @@ pub struct Function<'src, K: AstKind = Identity> {
     pub name: &'src str,
     pub params: Box<[ParamT<'src, K>]>,
     pub return_ty: Option<TypeT<'src, K>>,
-    pub body: Option<Block<'src, K>>,
+    pub body: Option<FunctionBody<'src, K>>,
 }
 
 impl<'src, K: AstKind> Function<'src, K> {
@@ -175,7 +175,7 @@ impl<'src, K: AstKind> Function<'src, K> {
         name: &'src str,
         params: impl Into<Box<[ParamT<'src, K>]>>,
         return_ty: Option<TypeT<'src, K>>,
-        body: Option<Block<'src, K>>,
+        body: Option<FunctionBody<'src, K>>,
     ) -> Self {
         Self {
             name,
@@ -196,6 +196,21 @@ impl<'src, K: AstKind> Function<'src, K> {
                 .collect(),
             return_ty: self.return_ty.map(Wrapper::into_val),
             body: self.body.map(|b| b.into_val().unwrapped()),
+        }
+    }
+}
+
+#[derive_where(Debug, PartialEq)]
+pub enum FunctionBody<'src, K: AstKind = Identity> {
+    Block(Block<'src, K>),
+    Inline(Box<ExprT<'src, K>>),
+}
+
+impl<'src, K: AstKind> FunctionBody<'src, K> {
+    pub fn unwrapped(self) -> FunctionBody<'src> {
+        match self {
+            FunctionBody::Block(b) => FunctionBody::Block(b.into_val().unwrapped()),
+            FunctionBody::Inline(e) => FunctionBody::Inline((*e).into_val().unwrapped().into()),
         }
     }
 }

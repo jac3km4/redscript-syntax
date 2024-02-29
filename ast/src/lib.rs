@@ -5,8 +5,8 @@ mod span;
 use ast::WithSpan;
 pub use ast::{
     Aggregate, Annotation, Assoc, AstKind, BinOp, Block, Case, ConditionalBlock, Constant, Enum,
-    EnumVariant, Expr, Field, Function, Import, Item, ItemDecl, ItemQualifiers, Module, Param,
-    ParamQualifiers, Path, Stmt, StrPart, Type, UnOp, Visibility, Wrapper,
+    EnumVariant, Expr, Field, Function, FunctionBody, Import, Item, ItemDecl, ItemQualifiers,
+    Module, Param, ParamQualifiers, Path, Stmt, StrPart, Type, UnOp, Visibility, Wrapper,
 };
 pub use files::{File, SourceMap};
 pub use span::{FileId, Span};

@@ -3,8 +3,8 @@ use std::{fmt, mem};
 use pretty_dtoa::{dtoa, ftoa, FmtFloatConfig};
 use redscript_ast::{
     Aggregate, Annotation, AstKind, BinOp, Block, Constant, Enum, EnumVariant, Expr, Field,
-    Function, Import, Item, ItemDecl, ItemQualifiers, Module, Param, ParamQualifiers, Path, Stmt,
-    StrPart, Type, UnOp, Visibility, Wrapper,
+    Function, FunctionBody, Import, Item, ItemDecl, ItemQualifiers, Module, Param, ParamQualifiers,
+    Path, Stmt, StrPart, Type, UnOp, Visibility, Wrapper,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -125,10 +125,10 @@ impl<K: AstKind> Formattable for Function<'_, K> {
         if let Some(ty) = &self.return_ty {
             write!(f, "-> {} ", ty.as_val().as_fmt(ctx))?;
         }
-        if let Some(body) = &self.body {
-            write!(f, "{}", body.as_fmt(ctx))
-        } else {
-            write!(f, ";")
+        match &self.body {
+            Some(FunctionBody::Block(block)) => write!(f, "{}", block.as_fmt(ctx)),
+            Some(FunctionBody::Inline(expr)) => write!(f, "= {};", (**expr).as_val().as_fmt(ctx)),
+            None => write!(f, ";"),
         }
     }
 }

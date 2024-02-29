@@ -3,9 +3,9 @@ use std::ops::BitOr;
 use crate::lexer::Token;
 use chumsky::{container::Container, prelude::*};
 use redscript_ast::{
-    Aggregate, Annotation, Block, Enum, EnumVariant, Field, Function, Import, Item, ItemDecl,
-    ItemQualifiers, Param, ParamQualifiers, Path, Span, SpannedAnnotation, SpannedEnum,
-    SpannedExpr, SpannedField, SpannedFunction, SpannedItem, SpannedItemDecl, Stmt, Visibility,
+    Aggregate, Annotation, Enum, EnumVariant, Field, Function, FunctionBody, Import, Item,
+    ItemDecl, ItemQualifiers, Param, ParamQualifiers, Path, Span, SpannedAnnotation, SpannedEnum,
+    SpannedExpr, SpannedField, SpannedFunction, SpannedItem, SpannedItemDecl, Visibility,
 };
 
 use super::{block, expr::expr_with_span, ident, type_with_span, Parse};
@@ -72,15 +72,18 @@ fn function<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedFunction<'src>>
         .collect::<Vec<_>>()
         .delimited_by(just(Token::LParen), just(Token::RParen));
 
-    let inline_body = just(Token::Assign)
-        .ignore_then(item_expr())
-        .map(|(ex, span)| Block::single((Stmt::Return(Some((ex, span).into())), span)));
+    let function_body = choice((
+        block().map(FunctionBody::Block),
+        just(Token::Assign)
+            .ignore_then(item_expr())
+            .map(|e| FunctionBody::Inline(e.into())),
+    ));
 
     just(Token::Ident("func"))
         .ignore_then(ident())
         .then(params)
         .then(just(Token::Arrow).ignore_then(ty).or_not())
-        .then(block().or(inline_body).or_not())
+        .then(function_body.or_not())
         .then_ignore(just(Token::Semicolon).or_not())
         .map(|(((name, params), ret_ty), body)| Function::new(name, params, ret_ty, body))
 }
@@ -231,7 +234,7 @@ mod tests {
     use crate::{parse_item, parse_item_decl};
 
     use pretty_assertions::assert_eq;
-    use redscript_ast::{Constant, Expr, FileId, Type};
+    use redscript_ast::{Block, Constant, Expr, FileId, FunctionBody, Stmt, Type};
 
     #[test]
     fn class() {
@@ -261,7 +264,9 @@ mod tests {
                                 ParamQualifiers::OPTIONAL
                             )],
                             Some(Type::plain("Int32")),
-                            Some(Block::single(Stmt::Return(Some(Expr::Ident("arg").into()))))
+                            Some(FunctionBody::Block(Block::single(Stmt::Return(Some(
+                                Expr::Ident("arg").into()
+                            )))))
                         )
                         .into()
                     )
@@ -350,7 +355,9 @@ mod tests {
                         ParamQualifiers::empty()
                     )],
                     Some(Type::plain("Int32")),
-                    Some(Block::single(Stmt::Return(Some(Expr::Ident("arg").into()))))
+                    Some(FunctionBody::Block(Block::single(Stmt::Return(Some(
+                        Expr::Ident("arg").into()
+                    )))))
                 )
                 .into()
             )

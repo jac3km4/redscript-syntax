@@ -124,7 +124,8 @@ mod tests {
 
     use pretty_assertions::assert_eq;
     use redscript_ast::{
-        Aggregate, Constant, Function, Import, Item, ItemDecl, ItemQualifiers, Visibility,
+        Aggregate, Constant, Function, FunctionBody, Import, Item, ItemDecl, ItemQualifiers,
+        Visibility,
     };
 
     #[test]
@@ -210,12 +211,9 @@ mod tests {
                             "Inline",
                             [],
                             Some(Type::plain("Int32")),
-                            Some(
-                                Block::single(Stmt::Return(Some(
-                                    Expr::Constant(Constant::I32(1)).into()
-                                )))
-                                .into()
-                            )
+                            Some(FunctionBody::Inline(
+                                Expr::Constant(Constant::I32(1)).into()
+                            ))
                         ))
                     ),
                 ]

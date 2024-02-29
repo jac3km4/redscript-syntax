@@ -1,29 +1,23 @@
 use std::ops::BitOr;
 
-use crate::{
-    lexer::Token, Span, SpannedAnnotation, SpannedEnum, SpannedExpr, SpannedField, SpannedFunction,
-    SpannedItem, SpannedItemDecl,
-};
+use crate::lexer::Token;
 use chumsky::{container::Container, prelude::*};
 use redscript_ast::{
     Aggregate, Annotation, Block, Enum, EnumVariant, Field, Function, Import, Item, ItemDecl,
-    ItemQualifiers, Param, ParamQualifiers, Path, Stmt, Visibility,
+    ItemQualifiers, Param, ParamQualifiers, Path, Span, SpannedAnnotation, SpannedEnum,
+    SpannedExpr, SpannedField, SpannedFunction, SpannedItem, SpannedItemDecl, Stmt, Visibility,
 };
 
-use super::{block, expr::expr_with_span, ident, type_with_span, ParseError, ParserInput};
+use super::{block, expr::expr_with_span, ident, type_with_span, Parse};
 
 #[inline]
-pub fn item_decl<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedItemDecl<'src>, ParseError<'tok, 'src>> + Clone
-{
+pub fn item_decl<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedItemDecl<'src>> {
     recursive(item_decl_rec)
 }
 
 pub fn item_decl_rec<'tok, 'src: 'tok>(
-    item_decl: impl Parser<'tok, ParserInput<'tok, 'src>, SpannedItemDecl<'src>, ParseError<'tok, 'src>>
-        + Clone,
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedItemDecl<'src>, ParseError<'tok, 'src>> + Clone
-{
+    item_decl: impl Parse<'tok, 'src, SpannedItemDecl<'src>>,
+) -> impl Parse<'tok, 'src, SpannedItemDecl<'src>> {
     annotation()
         .map_with(|a, e| (a, e.span()))
         .repeated()
@@ -39,15 +33,13 @@ pub fn item_decl_rec<'tok, 'src: 'tok>(
 
 #[inline]
 #[allow(unused)]
-pub fn item<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedItem<'src>, ParseError<'tok, 'src>> + Clone {
+pub fn item<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedItem<'src>> {
     item_rec(item_decl())
 }
 
 fn item_rec<'tok, 'src: 'tok>(
-    item_decl: impl Parser<'tok, ParserInput<'tok, 'src>, SpannedItemDecl<'src>, ParseError<'tok, 'src>>
-        + Clone,
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedItem<'src>, ParseError<'tok, 'src>> + Clone {
+    item_decl: impl Parse<'tok, 'src, SpannedItemDecl<'src>>,
+) -> impl Parse<'tok, 'src, SpannedItem<'src>> {
     choice((
         import().map(Item::Import),
         aggregate(item_decl),
@@ -58,9 +50,7 @@ fn item_rec<'tok, 'src: 'tok>(
     .labelled("item")
 }
 
-fn function<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedFunction<'src>, ParseError<'tok, 'src>> + Clone
-{
+fn function<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedFunction<'src>> {
     let param_qualifiers = select! {
         Token::Ident("opt") => ParamQualifiers::OPTIONAL,
         Token::Ident("out") => ParamQualifiers::OUT,
@@ -95,9 +85,7 @@ fn function<'tok, 'src: 'tok>(
         .map(|(((name, params), ret_ty), body)| Function::new(name, params, ret_ty, body))
 }
 
-fn field<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedField<'src>, ParseError<'tok, 'src>> + Clone
-{
+fn field<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedField<'src>> {
     just(Token::Ident("let"))
         .ignore_then(ident())
         .then(just(Token::Colon).ignore_then(type_with_span()))
@@ -106,8 +94,7 @@ fn field<'tok, 'src: 'tok>(
         .map(|((name, ty), default)| Field::new(name, ty, default))
 }
 
-fn enum_<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedEnum<'src>, ParseError<'tok, 'src>> + Clone {
+fn enum_<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedEnum<'src>> {
     let int = select! { Token::Int(i) => i };
 
     let variants = ident()
@@ -126,9 +113,8 @@ fn enum_<'tok, 'src: 'tok>(
 }
 
 fn aggregate<'tok, 'src: 'tok>(
-    item_decl: impl Parser<'tok, ParserInput<'tok, 'src>, SpannedItemDecl<'src>, ParseError<'tok, 'src>>
-        + Clone,
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedItem<'src>, ParseError<'tok, 'src>> + Clone {
+    item_decl: impl Parse<'tok, 'src, SpannedItemDecl<'src>>,
+) -> impl Parse<'tok, 'src, SpannedItem<'src>> {
     let is_struct = select! {
         Token::Ident("class") => false,
         Token::Ident("struct") => true,
@@ -155,8 +141,7 @@ fn aggregate<'tok, 'src: 'tok>(
         })
 }
 
-fn import<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, Import<'src>, ParseError<'tok, 'src>> + Clone {
+fn import<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Import<'src>> {
     let ident = ident();
     let import_selector = ident
         .clone()
@@ -184,8 +169,7 @@ fn import<'tok, 'src: 'tok>(
         })
 }
 
-fn visibility<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, Visibility, ParseError<'tok, 'src>> + Clone {
+fn visibility<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Visibility> {
     select! {
         Token::Ident("public") => Visibility::Public,
         Token::Ident("private") => Visibility::Private,
@@ -194,9 +178,7 @@ fn visibility<'tok, 'src: 'tok>(
     .labelled("item visibility")
 }
 
-fn annotation<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedAnnotation<'src>, ParseError<'tok, 'src>> + Clone
-{
+fn annotation<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedAnnotation<'src>> {
     just(Token::At)
         .ignore_then(ident())
         .then(
@@ -209,8 +191,7 @@ fn annotation<'tok, 'src: 'tok>(
         .map(|(name, args)| Annotation::new(name, args))
 }
 
-fn item_qualifier<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, ItemQualifiers, ParseError<'tok, 'src>> + Clone {
+fn item_qualifier<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, ItemQualifiers> {
     select! {
         Token::Ident("abstract") => ItemQualifiers::ABSTRACT,
         Token::Ident("cb") => ItemQualifiers::CALLBACK,
@@ -228,9 +209,7 @@ fn item_qualifier<'tok, 'src: 'tok>(
 }
 
 #[inline(never)]
-fn item_expr<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, (SpannedExpr<'src>, Span), ParseError<'tok, 'src>> + Clone
-{
+fn item_expr<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)> {
     expr_with_span()
 }
 
@@ -252,7 +231,7 @@ mod tests {
     use crate::{parse_item, parse_item_decl};
 
     use pretty_assertions::assert_eq;
-    use redscript_ast::{Constant, Expr, Type};
+    use redscript_ast::{Constant, Expr, FileId, Type};
 
     #[test]
     fn class() {
@@ -265,7 +244,7 @@ mod tests {
         "#;
 
         assert_eq!(
-            parse_item(code).0.unwrap().unwrapped(),
+            parse_item(code, FileId::from_u32(0)).0.unwrap().unwrapped(),
             Item::Class(Aggregate::new(
                 "Test",
                 None,
@@ -303,7 +282,7 @@ mod tests {
         "#;
 
         assert_eq!(
-            parse_item(code).0.unwrap().unwrapped(),
+            parse_item(code, FileId::from_u32(0)).0.unwrap().unwrapped(),
             Item::Enum(Enum::new(
                 "Test",
                 [
@@ -325,7 +304,7 @@ mod tests {
         "#;
 
         assert_eq!(
-            parse_item(code).0.unwrap().unwrapped(),
+            parse_item(code, FileId::from_u32(0)).0.unwrap().unwrapped(),
             Item::Struct(Aggregate::new(
                 "Test",
                 None,
@@ -361,7 +340,7 @@ mod tests {
         "#;
 
         assert_eq!(
-            parse_item(code).0.unwrap().unwrapped(),
+            parse_item(code, FileId::from_u32(0)).0.unwrap().unwrapped(),
             Item::Function(
                 Function::new(
                     "Test",
@@ -387,7 +366,10 @@ mod tests {
         "#;
 
         assert_eq!(
-            parse_item_decl(code).0.unwrap().unwrapped(),
+            parse_item_decl(code, FileId::from_u32(0))
+                .0
+                .unwrap()
+                .unwrapped(),
             ItemDecl::new(
                 [
                     Annotation::new("if", [Expr::Constant(Constant::Bool(true)).into()]),

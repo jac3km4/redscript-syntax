@@ -1,10 +1,14 @@
 use std::{borrow::Cow, fmt, mem};
 
-use crate::Span;
 use chumsky::{container::Container, input::InputRef, prelude::*};
 
+use crate::Span;
+
+type LexSpan = SimpleSpan;
+type LexExtra<'src> = extra::Err<Rich<'src, char, LexSpan>>;
+
 pub fn lex<'src>(
-) -> impl Parser<'src, &'src str, Vec<(Token<'src>, Span)>, extra::Err<Rich<'src, char, Span>>> {
+) -> impl Parser<'src, &'src str, Vec<(Token<'src, LexSpan>, LexSpan)>, LexExtra<'src>> + Clone {
     recursive(|this| {
         let num = text::int(10)
             .then(just('.').then(text::digits(10).or_not()).or_not())
@@ -138,8 +142,7 @@ pub fn lex<'src>(
     .collect()
 }
 
-fn symbol<'src>(
-) -> impl Parser<'src, &'src str, Token<'src>, extra::Err<Rich<'src, char, Span>>> + Clone {
+fn symbol<'src>() -> impl Parser<'src, &'src str, Token<'src, LexSpan>, LexExtra<'src>> + Clone {
     custom(|inp| {
         let before = inp.save();
         let pos = inp.offset();
@@ -196,8 +199,8 @@ fn symbol<'src>(
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Token<'src> {
-    Group(Box<[(Self, Span)]>),
+pub enum Token<'src, S = Span> {
+    Group(Box<[(Self, S)]>),
     Ident(&'src str),
     Int(i32),
     Uint(u32),
@@ -210,7 +213,7 @@ pub enum Token<'src> {
     ResRef(Cow<'src, str>),
     TdbId(Cow<'src, str>),
     StrFrag(Cow<'src, str>),
-    InterpStr(Box<[(Self, Span)]>),
+    InterpStr(Box<[(Self, S)]>),
 
     AssignAdd,
     AssignSub,
@@ -260,6 +263,85 @@ pub enum Token<'src> {
     Super,
     Case,
     Default,
+}
+
+impl<'src, S1> Token<'src, S1> {
+    pub fn map_span<S2>(self, f: impl Fn(S1) -> S2 + Clone) -> Token<'src, S2> {
+        match self {
+            Self::Group(s) => Token::Group(
+                s.into_vec()
+                    .into_iter()
+                    .map(|(tok, span)| (tok.map_span(f.clone()), f(span)))
+                    .collect(),
+            ),
+            Self::Ident(s) => Token::Ident(s),
+            Self::Int(n) => Token::Int(n),
+            Self::Uint(n) => Token::Uint(n),
+            Self::Ulong(n) => Token::Ulong(n),
+            Self::Long(n) => Token::Long(n),
+            Self::Float(n) => Token::Float(n),
+            Self::Double(n) => Token::Double(n),
+            Self::Str(s) => Token::Str(s),
+            Self::CName(s) => Token::CName(s),
+            Self::ResRef(s) => Token::ResRef(s),
+            Self::TdbId(s) => Token::TdbId(s),
+            Self::StrFrag(s) => Token::StrFrag(s),
+            Self::InterpStr(s) => Token::InterpStr(
+                s.into_vec()
+                    .into_iter()
+                    .map(|(tok, span)| (tok.map_span(f.clone()), f(span)))
+                    .collect(),
+            ),
+            Self::AssignAdd => Token::AssignAdd,
+            Self::AssignSub => Token::AssignSub,
+            Self::AssignMul => Token::AssignMul,
+            Self::AssignDiv => Token::AssignDiv,
+            Self::AssignBitOr => Token::AssignBitOr,
+            Self::AssignBitAnd => Token::AssignBitAnd,
+
+            Self::Plus => Token::Plus,
+            Self::Minus => Token::Minus,
+            Self::Star => Token::Star,
+            Self::Slash => Token::Slash,
+            Self::Percent => Token::Percent,
+            Self::Eq => Token::Eq,
+            Self::Ne => Token::Ne,
+            Self::Le => Token::Le,
+            Self::Ge => Token::Ge,
+            Self::And => Token::And,
+            Self::Or => Token::Or,
+            Self::BitAnd => Token::BitAnd,
+            Self::BitOr => Token::BitOr,
+            Self::BitXor => Token::BitXor,
+            Self::Not => Token::Not,
+            Self::BitNot => Token::BitNot,
+
+            Self::Period => Token::Period,
+            Self::Comma => Token::Comma,
+            Self::LParen => Token::LParen,
+            Self::RParen => Token::RParen,
+            Self::LBrace => Token::LBrace,
+            Self::RBrace => Token::RBrace,
+            Self::LBracket => Token::LBracket,
+            Self::RBracket => Token::RBracket,
+            Self::LAngle => Token::LAngle,
+            Self::RAngle => Token::RAngle,
+            Self::Arrow => Token::Arrow,
+            Self::Colon => Token::Colon,
+            Self::Semicolon => Token::Semicolon,
+            Self::Assign => Token::Assign,
+            Self::Question => Token::Question,
+            Self::At => Token::At,
+
+            Self::True => Token::True,
+            Self::False => Token::False,
+            Self::Null => Token::Null,
+            Self::This => Token::This,
+            Self::Super => Token::Super,
+            Self::Case => Token::Case,
+            Self::Default => Token::Default,
+        }
+    }
 }
 
 impl fmt::Display for Token<'_> {

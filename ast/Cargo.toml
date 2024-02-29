@@ -7,6 +7,11 @@ edition.workspace = true
 [dependencies]
 derive-where.workspace = true
 bitflags.workspace = true
+chumsky = { workspace = true, optional = true }
 
 [lints]
 workspace = true
+
+[features]
+chumsky = ["dep:chumsky"]
+testing = []

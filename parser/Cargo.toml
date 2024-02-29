@@ -6,10 +6,11 @@ edition.workspace = true
 
 [dependencies]
 chumsky.workspace = true
-redscript-ast = { path = "../ast" }
+redscript-ast = { path = "../ast", features = ["chumsky"] }
 
 [dev-dependencies]
 pretty_assertions.workspace = true
+redscript-ast = { path = "../ast", features = ["testing"] }
 
 [lints]
 workspace = true

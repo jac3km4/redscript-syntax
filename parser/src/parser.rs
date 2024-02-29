@@ -1,7 +1,4 @@
-use crate::{
-    lexer::Token, Block, Expr, Module, Span, Spanned, SpannedBlock, SpannedModule, SpannedStmt,
-    Stmt,
-};
+use crate::lexer::Token;
 use chumsky::{input::SpannedInput, prelude::*};
 
 mod expr;
@@ -10,18 +7,29 @@ mod stmt;
 
 pub use expr::expr;
 pub use item::{item, item_decl};
-use redscript_ast::{Path, Type};
+use redscript_ast::{
+    Block, Expr, FileId, Module, Path, Span, Spanned, SpannedBlock, SpannedModule, SpannedStmt,
+    Stmt, Type,
+};
 pub use stmt::stmt;
 
 use self::{item::item_decl_rec, stmt::stmt_rec};
 
 pub type ParserInput<'tok, 'src> = SpannedInput<Token<'src>, Span, &'tok [(Token<'src>, Span)]>;
 
-pub type ParseError<'tok, 'src, T = Token<'src>> = extra::Err<Rich<'tok, T, Span>>;
+pub type ParserExtra<'tok, 'src> = extra::Full<Rich<'tok, Token<'src>, Span>, (), FileId>;
 
-pub fn module<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedModule<'src>, ParseError<'tok, 'src>> + Clone
+pub trait Parse<'tok, 'src: 'tok, A>:
+    Parser<'tok, ParserInput<'tok, 'src>, A, ParserExtra<'tok, 'src>> + Clone
 {
+}
+
+impl<'tok, 'src: 'tok, A, P> Parse<'tok, 'src, A> for P where
+    P: Parser<'tok, ParserInput<'tok, 'src>, A, ParserExtra<'tok, 'src>> + Clone
+{
+}
+
+pub fn module<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedModule<'src>> {
     let mut item_decl = Recursive::declare();
     item_decl.define(item_decl_rec(item_decl.clone()));
 
@@ -43,18 +51,15 @@ pub fn module<'tok, 'src: 'tok>(
 }
 
 #[inline]
-fn block<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedBlock<'src>, ParseError<'tok, 'src>> + Clone
-{
+fn block<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedBlock<'src>> {
     let mut stmt = Recursive::declare();
     stmt.define(stmt_rec(stmt.clone()));
     block_rec(stmt)
 }
 
 fn block_rec<'tok, 'src: 'tok>(
-    stmt: impl Parser<'tok, ParserInput<'tok, 'src>, SpannedStmt<'src>, ParseError<'tok, 'src>> + Clone,
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedBlock<'src>, ParseError<'tok, 'src>> + Clone
-{
+    stmt: impl Parse<'tok, 'src, SpannedStmt<'src>>,
+) -> impl Parse<'tok, 'src, SpannedBlock<'src>> {
     stmt.map_with(|stmt, e| (stmt, e.span()))
         .repeated()
         .collect::<Vec<_>>()
@@ -72,8 +77,7 @@ fn block_rec<'tok, 'src: 'tok>(
         .labelled("block")
 }
 
-fn ident<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, &'src str, ParseError<'tok, 'src>> + Clone {
+fn ident<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, &'src str> {
     select! {
         Token::Ident(ident) => ident,
     }
@@ -81,15 +85,12 @@ fn ident<'tok, 'src: 'tok>(
 }
 
 #[inline]
-fn type_with_span<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, Spanned<Type<'src>>, ParseError<'tok, 'src>> + Clone
-{
+fn type_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Spanned<Type<'src>>> {
     type_().map_with(|ty, e| (ty, e.span()))
 }
 
 #[inline(never)]
-fn type_<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, Type<'src>, ParseError<'tok, 'src>> + Clone {
+fn type_<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Type<'src>> {
     recursive(|this| {
         let array_size = select! {  Token::Int(i) => i };
         choice((
@@ -119,10 +120,12 @@ fn type_<'tok, 'src: 'tok>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{parse_module, Aggregate, Function, Item, ItemDecl};
+    use crate::parse_module;
 
     use pretty_assertions::assert_eq;
-    use redscript_ast::{Constant, Import, ItemQualifiers, Visibility};
+    use redscript_ast::{
+        Aggregate, Constant, Function, Import, Item, ItemDecl, ItemQualifiers, Visibility,
+    };
 
     #[test]
     fn mod_with_imports() {
@@ -133,7 +136,10 @@ mod tests {
         import Exact.Path
         "#;
 
-        let res = parse_module(code).0.unwrap().unwrapped();
+        let res = parse_module(code, FileId::from_u32(0))
+            .0
+            .unwrap()
+            .unwrapped();
         assert_eq!(
             res,
             Module::new(
@@ -175,7 +181,10 @@ mod tests {
         func Inline() -> Int32 = 1
         "#;
 
-        let res = parse_module(code).0.unwrap().unwrapped();
+        let res = parse_module(code, FileId::from_u32(0))
+            .0
+            .unwrap()
+            .unwrapped();
         assert_eq!(
             res,
             Module::new(

@@ -1,20 +1,17 @@
 use std::iter;
 
-use crate::{lexer::Token, parser_input, Span, SpannedExpr};
+use crate::{lexer::Token, parser_input};
 use chumsky::prelude::*;
-use redscript_ast::{Assoc, BinOp, Constant, Expr, StrPart, UnOp};
+use redscript_ast::{Assoc, BinOp, Constant, Expr, Span, SpannedExpr, StrPart, UnOp};
 
-use super::{ident, type_with_span, ParseError, ParserInput};
+use super::{ident, type_with_span, Parse};
 
 #[inline]
-pub fn expr<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedExpr<'src>, ParseError<'tok, 'src>> + Clone {
+pub fn expr<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedExpr<'src>> {
     expr_with_span().map(|(expr, _)| expr)
 }
 
-pub fn expr_with_span<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, (SpannedExpr<'src>, Span), ParseError<'tok, 'src>> + Clone
-{
+pub fn expr_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)> {
     inner_expr_with_span()
         // handle trailing period explicitly because it's a common error
         .then(just(Token::Period).or_not())
@@ -26,8 +23,7 @@ pub fn expr_with_span<'tok, 'src: 'tok>(
         })
 }
 
-pub fn inner_expr_with_span<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, (SpannedExpr<'src>, Span), ParseError<'tok, 'src>> + Clone
+pub fn inner_expr_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>
 {
     recursive(|this| {
         let value = select! {
@@ -84,12 +80,12 @@ pub fn inner_expr_with_span<'tok, 'src: 'tok>(
 
         let interp_str = this
             .clone()
-            .nested_in(select_ref! { Token::Group(tok) => parser_input(tok) })
+            .nested_in(select_ref! { Token::Group(tok) = ex => parser_input(tok, *ex.ctx()) })
             .map(StrPart::Expr)
             .or(select! { Token::StrFrag(str) => StrPart::Str(str) })
             .repeated()
             .collect::<Vec<_>>()
-            .nested_in(select_ref! { Token::InterpStr(tok) => parser_input(tok) })
+            .nested_in(select_ref! { Token::InterpStr(tok) = ex => parser_input(tok, *ex.ctx()) })
             .map(|parts| Expr::InterpolatedString(parts.into()));
 
         let ident = ident();
@@ -269,11 +265,12 @@ mod tests {
     use crate::parse_expr;
 
     use pretty_assertions::assert_eq;
+    use redscript_ast::FileId;
 
     #[test]
     fn operators() {
         let code = r#"-b + 10 * 23 - 4 / 20 + 2"#;
-        let res = parse_expr(code).0.unwrap().unwrapped();
+        let res = parse_expr(code, FileId::from_u32(0)).0.unwrap().unwrapped();
 
         assert_eq!(
             res,
@@ -312,7 +309,7 @@ mod tests {
     #[test]
     fn nested_ternary() {
         let code = "true ? false ? 1 : 2 : 3";
-        let res = parse_expr(code).0.unwrap().unwrapped();
+        let res = parse_expr(code, FileId::from_u32(0)).0.unwrap().unwrapped();
         assert_eq!(
             res,
             Expr::Conditional {
@@ -331,7 +328,7 @@ mod tests {
     #[test]
     fn member_access() {
         let code = r#"obj[obj.index].method()[0].field"#;
-        let res = parse_expr(code).0.unwrap().unwrapped();
+        let res = parse_expr(code, FileId::from_u32(0)).0.unwrap().unwrapped();
 
         assert_eq!(
             res,
@@ -365,7 +362,7 @@ mod tests {
     #[test]
     fn number_literals() {
         let code = r#"[1, 2l, 3u, 4ul, 5., 6.d]"#;
-        let res = parse_expr(code).0.unwrap().unwrapped();
+        let res = parse_expr(code, FileId::from_u32(0)).0.unwrap().unwrapped();
 
         assert_eq!(
             res,
@@ -386,7 +383,7 @@ mod tests {
     #[test]
     fn str_literals() {
         let code = r#"["a", n"b", r"c", t"d"]"#;
-        let res = parse_expr(code).0.unwrap().unwrapped();
+        let res = parse_expr(code, FileId::from_u32(0)).0.unwrap().unwrapped();
 
         assert_eq!(
             res,
@@ -405,7 +402,7 @@ mod tests {
     #[test]
     fn str_interp() {
         let code = r#"s"2 + 2 is \(2 + 2)""#;
-        let res = parse_expr(code).0.unwrap().unwrapped();
+        let res = parse_expr(code, FileId::from_u32(0)).0.unwrap().unwrapped();
 
         assert_eq!(
             res,
@@ -426,7 +423,7 @@ mod tests {
     #[test]
     fn escaped_string() {
         let code = r#""te\"\u{0A}st""#;
-        let res = parse_expr(code).0.unwrap().unwrapped();
+        let res = parse_expr(code, FileId::from_u32(0)).0.unwrap().unwrapped();
 
         assert_eq!(res, Expr::Constant(Constant::String("te\"\nst".into())));
     }

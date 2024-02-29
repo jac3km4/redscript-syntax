@@ -1,10 +1,8 @@
 use std::io::{self, Write};
-use std::{
-    fs::{self, File},
-    path::PathBuf,
-};
+use std::{fs::File, path::PathBuf};
 
 use argh::FromArgs;
+use redscript_ast::SourceMap;
 use redscript_formatter::{FormatSettings, Formattable};
 use redscript_parser::parse_module;
 
@@ -27,20 +25,21 @@ struct Opts {
 
 fn main() -> anyhow::Result<()> {
     let opts = argh::from_env::<Opts>();
-    let conents = fs::read_to_string(opts.input)?;
-    let (module, errors) = parse_module(&conents);
-    let Some(module) = module else {
-        let err = errors
-            .iter()
-            .map(|e| e.to_string() + "\n")
-            .collect::<String>();
-        anyhow::bail!("{err}");
-    };
-    let settings = FormatSettings {
-        indent: opts.indent,
-        max_sig_digits: opts.max_sig_digits,
-    };
-    let mut out = io::BufWriter::new(File::create(&opts.output)?);
-    write!(out, "{}", module.display(&settings))?;
+    let map = SourceMap::from_files([opts.input])?;
+
+    for (id, file) in map.iter() {
+        let (module, errors) = parse_module(file.source(), id);
+        if let (Some(module), _) = (module, &errors[..]) {
+            let settings = FormatSettings {
+                indent: opts.indent,
+                max_sig_digits: opts.max_sig_digits,
+            };
+            let mut out = io::BufWriter::new(File::create(&opts.output)?);
+            write!(out, "{}", module.display(&settings))?;
+        };
+        for err in errors {
+            eprintln!("{}", err.pretty(&map));
+        }
+    }
     Ok(())
 }

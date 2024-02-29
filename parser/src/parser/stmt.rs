@@ -1,20 +1,19 @@
 use std::iter;
 
-use crate::{lexer::Token, SpannedStmt};
+use crate::lexer::Token;
 use chumsky::prelude::*;
-use redscript_ast::{Case, ConditionalBlock, Stmt};
+use redscript_ast::{Case, ConditionalBlock, SpannedStmt, Stmt};
 
-use super::{block_rec, expr::expr_with_span, ident, type_with_span, ParseError, ParserInput};
+use super::{block_rec, expr::expr_with_span, ident, type_with_span, Parse};
 
 #[inline]
-pub fn stmt<'tok, 'src: 'tok>(
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedStmt<'src>, ParseError<'tok, 'src>> + Clone {
+pub fn stmt<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedStmt<'src>> {
     recursive(stmt_rec)
 }
 
 pub fn stmt_rec<'tok, 'src: 'tok>(
-    stmt: impl Parser<'tok, ParserInput<'tok, 'src>, SpannedStmt<'src>, ParseError<'tok, 'src>> + Clone,
-) -> impl Parser<'tok, ParserInput<'tok, 'src>, SpannedStmt<'src>, ParseError<'tok, 'src>> + Clone {
+    stmt: impl Parse<'tok, 'src, SpannedStmt<'src>>,
+) -> impl Parse<'tok, 'src, SpannedStmt<'src>> {
     let ident = ident();
     let ty = type_with_span();
     let expr = expr_with_span();
@@ -124,10 +123,10 @@ pub fn stmt_rec<'tok, 'src: 'tok>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{parse_stmt, Error};
+    use crate::{parse_stmt, Error, Span};
 
     use pretty_assertions::assert_eq;
-    use redscript_ast::{BinOp, Block, Constant, Expr, Type};
+    use redscript_ast::{BinOp, Block, Constant, Expr, FileId, Type};
 
     #[test]
     fn if_else_chain() {
@@ -142,7 +141,7 @@ mod tests {
         "#;
 
         assert_eq!(
-            parse_stmt(code).0.unwrap().unwrapped(),
+            parse_stmt(code, FileId::from_u32(0)).0.unwrap().unwrapped(),
             Stmt::If {
                 blocks: [
                     ConditionalBlock::new(
@@ -176,7 +175,7 @@ mod tests {
         "#;
 
         assert_eq!(
-            parse_stmt(code).0.unwrap().unwrapped(),
+            parse_stmt(code, FileId::from_u32(0)).0.unwrap().unwrapped(),
             Stmt::Switch {
                 expr: Expr::Ident("a").into(),
                 cases: [
@@ -201,7 +200,7 @@ mod tests {
         "#;
 
         assert_eq!(
-            parse_stmt(code).0.unwrap().unwrapped(),
+            parse_stmt(code, FileId::from_u32(0)).0.unwrap().unwrapped(),
             Stmt::While(ConditionalBlock::new(
                 Expr::BinOp {
                     op: BinOp::Gt,
@@ -232,7 +231,7 @@ mod tests {
         "#;
 
         assert_eq!(
-            parse_stmt(code).0.unwrap().unwrapped(),
+            parse_stmt(code, FileId::from_u32(0)).0.unwrap().unwrapped(),
             Stmt::ForIn {
                 name: "i",
                 iter: Expr::Ident("range").into(),
@@ -255,7 +254,7 @@ mod tests {
         /* /* */ */
         let a: Int32 = 1;
         "#;
-        let res = parse_stmt(code).0.unwrap().unwrapped();
+        let res = parse_stmt(code, FileId::from_u32(0)).0.unwrap().unwrapped();
 
         assert_eq!(
             res,
@@ -270,11 +269,15 @@ mod tests {
     #[test]
     fn missing_semicolon() {
         let code = "a";
-        let (stmt, errors) = parse_stmt(code);
+        let file = FileId::from_u32(0);
+        let (stmt, errors) = parse_stmt(code, file);
 
         assert_eq!(
             errors,
-            vec![Error::Parse("expected ';'".into(), (0..1).into())]
+            vec![Error::Parse(
+                "expected ';'".into(),
+                Span::from((file, 0..1))
+            )]
         );
         assert_eq!(
             stmt.expect("should parse").unwrapped(),
@@ -285,13 +288,14 @@ mod tests {
     #[test]
     fn trailing_comma() {
         let code = "a.";
-        let (stmt, errors) = parse_stmt(code);
+        let file = FileId::from_u32(0);
+        let (stmt, errors) = parse_stmt(code, file);
 
         assert_eq!(
             errors,
             vec![
-                Error::Parse("unexpected '.'".into(), (0..2).into()),
-                Error::Parse("expected ';'".into(), (0..2).into())
+                Error::Parse("unexpected '.'".into(), Span::from((file, 0..2))),
+                Error::Parse("expected ';'".into(), Span::from((file, 0..2)))
             ]
         );
         assert_eq!(

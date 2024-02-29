@@ -74,7 +74,7 @@ fn parse<'tok, 'src: 'tok, A>(
         .into_output_errors();
     let errors = errors
         .into_iter()
-        .map(|err: Rich<'tok, Token<'src>, Span>| Error::Parse(err.to_string(), *err.span()))
+        .map(|err| Error::Parse(err.to_string(), *err.span()))
         .collect();
     (output, errors)
 }

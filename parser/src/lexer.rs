@@ -298,7 +298,6 @@ impl<'src, S1> Token<'src, S1> {
             Self::AssignDiv => Token::AssignDiv,
             Self::AssignBitOr => Token::AssignBitOr,
             Self::AssignBitAnd => Token::AssignBitAnd,
-
             Self::Plus => Token::Plus,
             Self::Minus => Token::Minus,
             Self::Star => Token::Star,
@@ -315,7 +314,6 @@ impl<'src, S1> Token<'src, S1> {
             Self::BitXor => Token::BitXor,
             Self::Not => Token::Not,
             Self::BitNot => Token::BitNot,
-
             Self::Period => Token::Period,
             Self::Comma => Token::Comma,
             Self::LParen => Token::LParen,
@@ -332,7 +330,6 @@ impl<'src, S1> Token<'src, S1> {
             Self::Assign => Token::Assign,
             Self::Question => Token::Question,
             Self::At => Token::At,
-
             Self::True => Token::True,
             Self::False => Token::False,
             Self::Null => Token::Null,

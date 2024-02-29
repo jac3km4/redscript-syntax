@@ -29,7 +29,7 @@ fn main() -> anyhow::Result<()> {
 
     for (id, file) in map.iter() {
         let (module, errors) = parse_module(file.source(), id);
-        if let (Some(module), _) = (module, &errors[..]) {
+        if let (Some(module), []) = (module, &errors[..]) {
             let settings = FormatSettings {
                 indent: opts.indent,
                 max_sig_digits: opts.max_sig_digits,

@@ -19,11 +19,17 @@ pub fn stmt_rec<'tok, 'src: 'tok>(
     let expr = expr_with_span();
     let block = block_rec(stmt.clone());
 
+    let semicolon = just(Token::Semicolon).or_not().validate(|semi, ctx, errs| {
+        if semi.is_none() {
+            errs.emit(Rich::custom(ctx.span(), "expected ';'"));
+        }
+    });
+
     let let_ = just(Token::Ident("let"))
         .ignore_then(ident.clone())
         .then(just(Token::Colon).ignore_then(ty).or_not())
         .then(just(Token::Assign).ignore_then(expr.clone().or_not()))
-        .then_ignore(just(Token::Semicolon))
+        .then_ignore(semicolon.clone())
         .map(|((name, ty), value)| {
             let value = value.map(Box::new);
             Stmt::Let { name, ty, value }
@@ -89,22 +95,14 @@ pub fn stmt_rec<'tok, 'src: 'tok>(
 
     let return_stmt = just(Token::Ident("return"))
         .ignore_then(expr.clone().or_not())
-        .then_ignore(just(Token::Semicolon))
+        .then_ignore(semicolon.clone())
         .map(|e| Stmt::Return(e.map(Box::new)));
 
     let break_stmt = just(Token::Ident("break"))
-        .ignore_then(just(Token::Semicolon))
+        .ignore_then(semicolon.clone())
         .map(|_| Stmt::Break);
 
-    let expr_stmt =
-        // handle missing semicolon explicitly because it's a common error
-        expr.then(just(Token::Semicolon).or_not())
-            .validate(|(exp, semi), ctx, errs| {
-                if semi.is_none() {
-                    errs.emit(Rich::custom(ctx.span(), "expected ';'"));
-                };
-                Stmt::Expr(exp.into())
-            });
+    let expr_stmt = expr.then_ignore(semicolon).map(|e| Stmt::Expr(e.into()));
 
     choice((
         let_,

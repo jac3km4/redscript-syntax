@@ -68,7 +68,8 @@ fn function<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedFunction<'src>>
         .map_with(|((qualifiers, name), typ), e| {
             (Param::new(name, typ, qualifiers.value), e.span())
         })
-        .repeated()
+        .separated_by(just(Token::Comma))
+        .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(just(Token::LParen), just(Token::RParen));
 
@@ -339,8 +340,8 @@ mod tests {
     #[test]
     fn func() {
         let code = r#"
-        func Test(arg: Int32) -> Int32 {
-            return arg;
+        func Test(arg1: Int32, arg2: Int64) -> Int32 {
+            return arg1;
         }
         "#;
 
@@ -349,14 +350,13 @@ mod tests {
             Item::Function(
                 Function::new(
                     "Test",
-                    [Param::new(
-                        "arg",
-                        Type::plain("Int32"),
-                        ParamQualifiers::empty()
-                    )],
+                    [
+                        Param::new("arg1", Type::plain("Int32"), ParamQualifiers::empty()),
+                        Param::new("arg2", Type::plain("Int64"), ParamQualifiers::empty()),
+                    ],
                     Some(Type::plain("Int32")),
                     Some(FunctionBody::Block(Block::single(Stmt::Return(Some(
-                        Expr::Ident("arg").into()
+                        Expr::Ident("arg1").into()
                     )))))
                 )
                 .into()

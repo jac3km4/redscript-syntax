@@ -674,48 +674,48 @@ pub enum BinOp {
 impl BinOp {
     pub fn precedence(self) -> u8 {
         match self {
-            BinOp::AssignAdd
-            | BinOp::AssignSub
-            | BinOp::AssignMul
-            | BinOp::AssignDiv
-            | BinOp::AssignBitOr
-            | BinOp::AssignBitAnd => 0,
-            BinOp::Or => 1,
-            BinOp::And => 2,
-            BinOp::BitOr => 3,
-            BinOp::BitXor => 4,
-            BinOp::BitAnd => 5,
-            BinOp::Eq | BinOp::Ne => 6,
-            BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => 7,
-            BinOp::Add | BinOp::Sub => 8,
-            BinOp::Mul | BinOp::Div | BinOp::Mod => 9,
+            Self::AssignAdd
+            | Self::AssignSub
+            | Self::AssignMul
+            | Self::AssignDiv
+            | Self::AssignBitOr
+            | Self::AssignBitAnd => 0,
+            Self::Or => 1,
+            Self::And => 2,
+            Self::BitOr => 3,
+            Self::BitXor => 4,
+            Self::BitAnd => 5,
+            Self::Eq | Self::Ne => 6,
+            Self::Lt | Self::Le | Self::Gt | Self::Ge => 7,
+            Self::Add | Self::Sub => 8,
+            Self::Mul | Self::Div | Self::Mod => 9,
         }
     }
 
     pub fn assoc(self) -> Assoc {
         match self {
-            BinOp::AssignAdd
-            | BinOp::AssignSub
-            | BinOp::AssignMul
-            | BinOp::AssignDiv
-            | BinOp::AssignBitOr
-            | BinOp::AssignBitAnd => Assoc::Right,
-            BinOp::Or
-            | BinOp::And
-            | BinOp::BitOr
-            | BinOp::BitXor
-            | BinOp::BitAnd
-            | BinOp::Eq
-            | BinOp::Ne
-            | BinOp::Lt
-            | BinOp::Le
-            | BinOp::Gt
-            | BinOp::Ge
-            | BinOp::Add
-            | BinOp::Sub
-            | BinOp::Mul
-            | BinOp::Div
-            | BinOp::Mod => Assoc::Left,
+            Self::AssignAdd
+            | Self::AssignSub
+            | Self::AssignMul
+            | Self::AssignDiv
+            | Self::AssignBitOr
+            | Self::AssignBitAnd => Assoc::Right,
+            Self::Or
+            | Self::And
+            | Self::BitOr
+            | Self::BitXor
+            | Self::BitAnd
+            | Self::Eq
+            | Self::Ne
+            | Self::Lt
+            | Self::Le
+            | Self::Gt
+            | Self::Ge
+            | Self::Add
+            | Self::Sub
+            | Self::Mul
+            | Self::Div
+            | Self::Mod => Assoc::Left,
         }
     }
 }

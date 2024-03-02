@@ -2,7 +2,7 @@ use std::{fmt, mem};
 
 use pretty_dtoa::{dtoa, ftoa, FmtFloatConfig};
 use redscript_ast::{
-    Aggregate, Annotation, AstKind, BinOp, Block, Constant, Enum, EnumVariant, Expr, Field,
+    Aggregate, Annotation, Assoc, AstKind, BinOp, Block, Constant, Enum, EnumVariant, Expr, Field,
     Function, FunctionBody, Import, Item, ItemDecl, ItemQualifiers, Module, Param, ParamQualifiers,
     Path, Stmt, StrPart, Type, UnOp, Visibility, Wrapper,
 };
@@ -30,6 +30,7 @@ impl Default for FormatSettings {
 pub struct FormatCtx<'s> {
     settings: &'s FormatSettings,
     depth: u16,
+    parent: Option<ParentOp>,
 }
 
 impl FormatCtx<'_> {
@@ -41,6 +42,7 @@ impl FormatCtx<'_> {
         Self {
             settings: self.settings,
             depth: self.depth + n,
+            parent: self.parent,
         }
     }
 
@@ -48,11 +50,26 @@ impl FormatCtx<'_> {
         Self {
             settings: self.settings,
             depth: self.depth - 1,
+            parent: self.parent,
         }
     }
 
     fn current_indent(&self) -> u16 {
         self.depth * self.settings.indent
+    }
+
+    fn with_parent_op(&self, parent: ParentOp) -> Self {
+        Self {
+            parent: Some(parent),
+            ..*self
+        }
+    }
+
+    fn without_parent_op(&self) -> Self {
+        Self {
+            parent: None,
+            ..*self
+        }
     }
 }
 
@@ -60,7 +77,14 @@ pub trait Formattable: Sized {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result;
 
     fn display(&self, settings: &FormatSettings) -> impl fmt::Display {
-        DisplayProxy(self, FormatCtx { settings, depth: 0 })
+        DisplayProxy(
+            self,
+            FormatCtx {
+                settings,
+                depth: 0,
+                parent: None,
+            },
+        )
     }
 }
 
@@ -307,6 +331,7 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                 (Constant::Bool(v), _) => write!(f, "{v}"),
             },
             Expr::ArrayLit(elems) => {
+                let ctx = ctx.without_parent_op();
                 write!(
                     f,
                     "[{}]",
@@ -314,6 +339,7 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                 )
             }
             Expr::InterpolatedString(parts) => {
+                let ctx = ctx.without_parent_op();
                 write!(f, "s\"")?;
                 for part in &parts[..] {
                     match part {
@@ -325,6 +351,7 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                 Ok(())
             }
             Expr::Assign { lhs, rhs } => {
+                let ctx = ctx.without_parent_op();
                 write!(
                     f,
                     "{} = {}",
@@ -333,35 +360,73 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                 )
             }
             Expr::BinOp { lhs, op, rhs } => {
-                write!(
-                    f,
-                    "{} {} {}",
-                    (**lhs).as_val().as_fmt(ctx),
-                    op.as_fmt(ctx),
-                    (**rhs).as_val().as_fmt(ctx)
-                )
+                let can_assoc = match ctx.parent {
+                    Some(ParentOp::TopPrec | ParentOp::Unary) => false,
+                    Some(ParentOp::BinaryLhs(parent)) | Some(ParentOp::BinaryRhs(parent))
+                        if parent.precedence() < op.precedence() =>
+                    {
+                        true
+                    }
+                    Some(ParentOp::BinaryLhs(parent)) => {
+                        parent.precedence() == op.precedence() && parent.assoc() == Assoc::Left
+                    }
+                    Some(ParentOp::BinaryRhs(parent)) => {
+                        parent.precedence() == op.precedence() && parent.assoc() == Assoc::Right
+                    }
+                    None => true,
+                };
+                let lhs = (**lhs)
+                    .as_val()
+                    .as_fmt(ctx.with_parent_op(ParentOp::BinaryLhs(*op)));
+                let rhs = (**rhs)
+                    .as_val()
+                    .as_fmt(ctx.with_parent_op(ParentOp::BinaryRhs(*op)));
+                if can_assoc {
+                    write!(f, "{} {} {}", lhs, op.as_fmt(ctx), rhs)
+                } else {
+                    write!(f, "({} {} {})", lhs, op.as_fmt(ctx), rhs)
+                }
             }
             Expr::UnOp { op, expr } => {
-                write!(f, "{}{}", op.as_fmt(ctx), (**expr).as_val().as_fmt(ctx))
+                let can_assoc = !matches!(ctx.parent, Some(ParentOp::TopPrec));
+                let ctx = ctx.with_parent_op(ParentOp::Unary);
+                let expr = (**expr).as_val().as_fmt(ctx);
+                if can_assoc {
+                    write!(f, "{}{}", op.as_fmt(ctx), expr)
+                } else {
+                    write!(f, "({}{})", op.as_fmt(ctx), expr)
+                }
             }
             Expr::Call { expr, args } => {
                 write!(
                     f,
                     "{}({})",
-                    (**expr).as_val().as_fmt(ctx),
-                    SepByMultiline(args.iter().map(Wrapper::as_val), ", ", ctx)
+                    (**expr)
+                        .as_val()
+                        .as_fmt(ctx.with_parent_op(ParentOp::TopPrec)),
+                    SepByMultiline(
+                        args.iter().map(Wrapper::as_val),
+                        ", ",
+                        ctx.without_parent_op()
+                    )
                 )
             }
-            Expr::Member { .. } => format_member(self, f, ctx),
+            Expr::Member { .. } => {
+                let ctx = ctx.without_parent_op();
+                format_member(self, f, ctx)
+            }
             Expr::Index { expr, index } => {
                 write!(
                     f,
                     "{}[{}]",
-                    (**expr).as_val().as_fmt(ctx),
-                    (**index).as_val().as_fmt(ctx)
+                    (**expr)
+                        .as_val()
+                        .as_fmt(ctx.with_parent_op(ParentOp::TopPrec)),
+                    (**index).as_val().as_fmt(ctx.without_parent_op())
                 )
             }
             Expr::DynCast { expr, ty } => {
+                let ctx = ctx.with_parent_op(ParentOp::TopPrec);
                 write!(
                     f,
                     "{} as {}",
@@ -370,6 +435,7 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                 )
             }
             Expr::New { ty, args } => {
+                let ctx = ctx.without_parent_op();
                 write!(
                     f,
                     "new {}({})",
@@ -378,6 +444,7 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                 )
             }
             Expr::Conditional { cond, then, else_ } => {
+                let ctx = ctx.without_parent_op();
                 write!(
                     f,
                     "{} ? {} : {}",
@@ -665,7 +732,7 @@ fn format_member<K: AstKind>(
         .count()
         > usize::from(ctx.settings.max_chain);
 
-    write!(f, "{}", cur.as_fmt(ctx))?;
+    write!(f, "{}", cur.as_fmt(ctx.with_parent_op(ParentOp::TopPrec)))?;
     let ctx = ctx.bump(1);
     for i in chain.into_iter().rev() {
         match i {
@@ -742,4 +809,12 @@ fn format_stmts<'a, 'c: 'a, K: AstKind + 'a>(
     }
 
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ParentOp {
+    Unary,
+    BinaryLhs(BinOp),
+    BinaryRhs(BinOp),
+    TopPrec,
 }

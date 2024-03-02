@@ -188,7 +188,7 @@ impl<K: AstKind> Formattable for Enum<'_, K> {
             let ctx = ctx.bump(1);
             writeln!(f, "{}{},", ctx.ws(), variant.as_val().as_fmt(ctx))?;
         }
-        writeln!(f, "}}")
+        write!(f, "}}")
     }
 }
 

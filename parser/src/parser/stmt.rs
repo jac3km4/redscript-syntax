@@ -28,7 +28,7 @@ pub fn stmt_rec<'tok, 'src: 'tok>(
     let let_ = just(Token::Ident("let"))
         .ignore_then(ident.clone())
         .then(just(Token::Colon).ignore_then(ty).or_not())
-        .then(just(Token::Assign).ignore_then(expr.clone().or_not()))
+        .then(just(Token::Assign).ignore_then(expr.clone()).or_not())
         .then_ignore(semicolon.clone())
         .map(|((name, ty), value)| {
             let value = value.map(Box::new);

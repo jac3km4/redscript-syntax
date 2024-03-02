@@ -10,7 +10,20 @@ use redscript_ast::{
 #[derive(Debug, Clone, Copy)]
 pub struct FormatSettings {
     pub indent: u16,
-    pub max_sig_digits: Option<u8>,
+    pub max_length: u16,
+    pub max_chain: u8,
+    pub trunc_sig_digits: Option<u8>,
+}
+
+impl Default for FormatSettings {
+    fn default() -> Self {
+        Self {
+            indent: 2,
+            max_length: 80,
+            max_chain: 2,
+            trunc_sig_digits: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -29,6 +42,17 @@ impl FormatCtx<'_> {
             settings: self.settings,
             depth: self.depth + n,
         }
+    }
+
+    fn decrement(&self) -> Self {
+        Self {
+            settings: self.settings,
+            depth: self.depth - 1,
+        }
+    }
+
+    fn current_indent(&self) -> u16 {
+        self.depth * self.settings.indent
     }
 }
 
@@ -120,7 +144,7 @@ impl<K: AstKind> Formattable for Function<'_, K> {
             f,
             "func {}({}) ",
             self.name,
-            SepBy(self.params.iter().map(Wrapper::as_val), ", ", ctx)
+            SepByMultiline(self.params.iter().map(Wrapper::as_val), ", ", ctx)
         )?;
         if let Some(ty) = &self.return_ty {
             write!(f, "-> {} ", ty.as_val().as_fmt(ctx))?;
@@ -171,7 +195,7 @@ impl<K: AstKind> Formattable for Stmt<'_, K> {
                     write!(f, ": {}", ty.as_val().as_fmt(ctx))?;
                 }
                 if let Some(value) = value {
-                    write!(f, " = {}", (**value).as_val().as_fmt(ctx.bump(1)))?;
+                    write!(f, " = {}", (**value).as_val().as_fmt(ctx))?;
                 }
                 write!(f, ";")
             }
@@ -253,7 +277,7 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         match self {
             Expr::Ident(name) => write!(f, "{name}"),
-            Expr::Constant(value) => match (value, ctx.settings.max_sig_digits) {
+            Expr::Constant(value) => match (value, ctx.settings.trunc_sig_digits) {
                 (Constant::String(s), _) => write!(f, "\"{}\"", str::escape_default(s)),
                 (Constant::CName(s), _) => write!(f, "n\"{}\"", str::escape_default(s)),
                 (Constant::Resource(s), _) => write!(f, "r\"{}\"", str::escape_default(s)),
@@ -286,7 +310,7 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                 write!(
                     f,
                     "[{}]",
-                    SepBy(elems.iter().map(Wrapper::as_val), ", ", ctx)
+                    SepByMultiline(elems.iter().map(Wrapper::as_val), ", ", ctx)
                 )
             }
             Expr::InterpolatedString(parts) => {
@@ -325,12 +349,10 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                     f,
                     "{}({})",
                     (**expr).as_val().as_fmt(ctx),
-                    SepBy(args.iter().map(Wrapper::as_val), ", ", ctx)
+                    SepByMultiline(args.iter().map(Wrapper::as_val), ", ", ctx)
                 )
             }
-            Expr::Member { expr, member } => {
-                write!(f, "{}.{member}", (**expr).as_val().as_fmt(ctx))
-            }
+            Expr::Member { .. } => format_member(self, f, ctx),
             Expr::Index { expr, index } => {
                 write!(
                     f,
@@ -352,7 +374,7 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                     f,
                     "new {}({})",
                     ty.as_val().as_fmt(ctx),
-                    SepBy(args.iter().map(Wrapper::as_val), ", ", ctx)
+                    SepByMultiline(args.iter().map(Wrapper::as_val), ", ", ctx)
                 )
             }
             Expr::Conditional { cond, then, else_ } => {
@@ -543,6 +565,39 @@ where
     }
 }
 
+struct SepByMultiline<'s, I>(I, &'static str, FormatCtx<'s>);
+
+impl<I: Iterator + Clone> fmt::Display for SepByMultiline<'_, I>
+where
+    I::Item: Formattable,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Self(iter, sep, ctx) = self;
+        let vec: Vec<_> = iter
+            .clone()
+            .into_iter()
+            .map(|elem| elem.as_fmt(ctx.bump(1)).to_string())
+            .collect();
+        if ctx.current_indent() + vec.iter().map(|s| s.len() as u16).sum::<u16>()
+            > ctx.settings.max_length
+        {
+            let sep = sep.trim_end();
+            let ctx = ctx.bump(1);
+            for (i, elem) in vec.iter().enumerate() {
+                if i > 0 {
+                    write!(f, "{sep}")?;
+                }
+                writeln!(f)?;
+                write!(f, "{}{}", ctx.ws(), elem)?;
+            }
+            writeln!(f)?;
+            write!(f, "{}", ctx.decrement().ws())
+        } else {
+            write!(f, "{}", SepBy(vec.iter().map(String::as_str), ", ", *ctx))
+        }
+    }
+}
+
 trait SyntaxOps {
     fn as_fmt(&self, ctx: FormatCtx<'_>) -> impl fmt::Display;
 }
@@ -567,6 +622,76 @@ impl<A: Formattable> Formattable for &A {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         (*self).format(f, ctx)
     }
+}
+
+enum Chain<'ast, 'src, K: AstKind> {
+    Member(&'src str),
+    Call(&'src str, &'ast [K::Inner<Expr<'src, K>>]),
+    Index(&'ast Expr<'src, K>),
+}
+
+fn format_member<K: AstKind>(
+    expr: &Expr<'_, K>,
+    f: &mut fmt::Formatter<'_>,
+    ctx: FormatCtx<'_>,
+) -> fmt::Result {
+    let mut cur = expr;
+    let mut chain = vec![];
+    loop {
+        match cur {
+            Expr::Member { expr, member } => {
+                cur = (**expr).as_val();
+                chain.push(Chain::Member(member));
+            }
+            Expr::Index { expr, index } => {
+                cur = (**expr).as_val();
+                chain.push(Chain::Index((**index).as_val()));
+            }
+            Expr::Call { expr, args } => {
+                if let Expr::Member { expr, member } = (**expr).as_val() {
+                    cur = (**expr).as_val();
+                    chain.push(Chain::Call(member, &args[..]));
+                } else {
+                    break;
+                }
+            }
+            _ => break,
+        };
+    }
+
+    let break_line = chain
+        .iter()
+        .filter(|i| matches!(i, Chain::Member(..) | Chain::Call(..)))
+        .count()
+        > usize::from(ctx.settings.max_chain);
+
+    write!(f, "{}", cur.as_fmt(ctx))?;
+    let ctx = ctx.bump(1);
+    for i in chain.into_iter().rev() {
+        match i {
+            Chain::Member(member) => {
+                if break_line {
+                    writeln!(f)?;
+                    write!(f, "{}", ctx.ws())?
+                }
+                write!(f, ".{}", member)?
+            }
+            Chain::Call(member, args) => {
+                if break_line {
+                    writeln!(f)?;
+                    write!(f, "{}", ctx.ws())?
+                }
+                write!(
+                    f,
+                    ".{}({})",
+                    member,
+                    SepBy(args.iter().map(Wrapper::as_val), ", ", ctx)
+                )?
+            }
+            Chain::Index(index) => write!(f, "[{}]", index.as_fmt(ctx))?,
+        }
+    }
+    Ok(())
 }
 
 fn format_items<'a, 'c: 'a, K: AstKind + 'a>(

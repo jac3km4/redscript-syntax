@@ -25,8 +25,10 @@ impl SourceMap {
         Ok(files)
     }
 
-    pub fn add(&mut self, path: PathBuf, source: String) {
+    pub fn add(&mut self, path: PathBuf, source: String) -> FileId {
+        let id = FileId(self.files.len() as u32);
         self.files.push(File::new(path, source));
+        id
     }
 
     pub fn get(&self, id: FileId) -> Option<&File> {

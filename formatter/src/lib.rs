@@ -312,8 +312,8 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                         .round();
                     write!(f, "{}", ftoa(v, conf))
                 }
-                (Constant::F32(v), _) => {
-                    write!(f, "{v}")
+                (&Constant::F32(v), _) => {
+                    write!(f, "{}", ftoa(v, FmtFloatConfig::default()))
                 }
                 (&Constant::F64(v), Some(max_sig_digits)) => {
                     let conf = FmtFloatConfig::default()
@@ -321,8 +321,8 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                         .round();
                     write!(f, "{}d", dtoa(v, conf))
                 }
-                (Constant::F64(v), _) => {
-                    write!(f, "{v}d")
+                (&Constant::F64(v), _) => {
+                    write!(f, "{}", dtoa(v, FmtFloatConfig::default()))
                 }
                 (Constant::I32(v), _) => write!(f, "{v}"),
                 (Constant::I64(v), _) => write!(f, "{v}l"),

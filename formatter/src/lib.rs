@@ -243,7 +243,7 @@ impl<K: AstKind> Formattable for Stmt<'_, K> {
                         writeln!(f, "{}", stmt.as_val().as_fmt(ctx.bump(1)))?;
                     }
                 }
-                writeln!(f, "{}}}", ctx.ws())
+                write!(f, "{}}}", ctx.ws())
             }
             Stmt::If { blocks, else_ } => {
                 write!(f, "{}", ctx.ws())?;

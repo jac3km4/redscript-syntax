@@ -210,7 +210,7 @@ mod tests {
                         Item::Function(Function::new(
                             "Inline",
                             [],
-                            Some(Type::plain("Int32")),
+                            Some(Type::plain("Int32").into()),
                             Some(FunctionBody::Inline(
                                 Expr::Constant(Constant::I32(1)).into()
                             ))

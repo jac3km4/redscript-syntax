@@ -86,7 +86,9 @@ fn function<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedFunction<'src>>
         .then(just(Token::Arrow).ignore_then(ty).or_not())
         .then(function_body.or_not())
         .then_ignore(just(Token::Semicolon).or_not())
-        .map(|(((name, params), ret_ty), body)| Function::new(name, params, ret_ty, body))
+        .map(|(((name, params), ret_ty), body)| {
+            Function::new(name, params, ret_ty.map(Box::new), body)
+        })
 }
 
 fn field<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedField<'src>> {
@@ -95,7 +97,7 @@ fn field<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedField<'src>> {
         .then(just(Token::Colon).ignore_then(type_with_span()))
         .then(just(Token::Assign).ignore_then(item_expr()).or_not())
         .then_ignore(just(Token::Semicolon))
-        .map(|((name, ty), default)| Field::new(name, ty, default))
+        .map(|((name, ty), default)| Field::new(name, ty.into(), default.map(Box::new)))
 }
 
 fn enum_<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedEnum<'src>> {
@@ -140,7 +142,7 @@ fn aggregate<'tok, 'src: 'tok>(
         .then(items)
         .then_ignore(just(Token::Semicolon).or_not())
         .map(|(((is_struct, name), extends), items)| {
-            let aggregate = Aggregate::new(name, extends, items);
+            let aggregate = Aggregate::new(name, extends.map(Box::new), items);
             if is_struct {
                 Item::Struct(aggregate)
             } else {
@@ -268,7 +270,7 @@ mod tests {
                                 Type::plain("Int32"),
                                 ParamQualifiers::OPTIONAL
                             )],
-                            Some(Type::plain("Int32")),
+                            Some(Type::plain("Int32").into()),
                             Some(FunctionBody::Block(Block::single(Stmt::Return(Some(
                                 Expr::Ident("arg").into()
                             )))))
@@ -323,7 +325,7 @@ mod tests {
                         [],
                         None,
                         ItemQualifiers::empty(),
-                        Item::Let(Field::new("a", Type::plain("Int32"), None)).into()
+                        Item::Let(Field::new("a", Type::plain("Int32").into(), None)).into()
                     ),
                     ItemDecl::new(
                         [],
@@ -331,8 +333,8 @@ mod tests {
                         ItemQualifiers::empty(),
                         Item::Let(Field::new(
                             "b",
-                            Type::plain("Int32"),
-                            Some(Expr::Constant(Constant::I32(3)))
+                            Type::plain("Int32").into(),
+                            Some(Expr::Constant(Constant::I32(3)).into())
                         ))
                         .into()
                     ),
@@ -358,7 +360,7 @@ mod tests {
                         Param::new("arg1", Type::plain("Int32"), ParamQualifiers::empty()),
                         Param::new("arg2", Type::plain("Int64"), ParamQualifiers::empty()),
                     ],
-                    Some(Type::plain("Int32")),
+                    Some(Type::plain("Int32").into()),
                     Some(FunctionBody::Block(Block::single(Stmt::Return(Some(
                         Expr::Ident("arg1").into()
                     )))))

@@ -148,7 +148,7 @@ impl<K: AstKind> Formattable for Aggregate<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         write!(f, "{}", self.name)?;
         if let Some(extends) = &self.extends {
-            write!(f, " extends {}", extends.as_val().as_fmt(ctx))?;
+            write!(f, " extends {}", (**extends).as_val().as_fmt(ctx))?;
         }
         writeln!(f, " {{")?;
         format_items(self.items.iter().map(Wrapper::as_val), f, ctx.bump(1))?;
@@ -158,9 +158,9 @@ impl<K: AstKind> Formattable for Aggregate<'_, K> {
 
 impl<K: AstKind> Formattable for Field<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
-        write!(f, "let {}: {}", self.name, self.ty.as_val().as_fmt(ctx))?;
+        write!(f, "let {}: {}", self.name, (*self.ty).as_val().as_fmt(ctx))?;
         if let Some(value) = &self.default {
-            write!(f, " = {}", value.as_val().as_fmt(ctx))?;
+            write!(f, " = {}", (**value).as_val().as_fmt(ctx))?;
         }
         write!(f, ";")
     }
@@ -175,7 +175,7 @@ impl<K: AstKind> Formattable for Function<'_, K> {
             SepByMultiline(self.params.iter().map(Wrapper::as_val), ", ", ctx)
         )?;
         if let Some(ty) = &self.return_ty {
-            write!(f, "-> {} ", ty.as_val().as_fmt(ctx))?;
+            write!(f, "-> {} ", (**ty).as_val().as_fmt(ctx))?;
         }
         match &self.body {
             Some(FunctionBody::Block(block)) => write!(f, "{}", block.as_fmt(ctx)),

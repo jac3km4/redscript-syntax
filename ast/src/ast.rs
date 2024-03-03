@@ -110,14 +110,14 @@ impl<'src, K: AstKind> Item<'src, K> {
 #[derive_where(Debug, PartialEq)]
 pub struct Aggregate<'src, K: AstKind = Identity> {
     pub name: &'src str,
-    pub extends: Option<TypeT<'src, K>>,
+    pub extends: Option<Box<TypeT<'src, K>>>,
     pub items: Box<[ItemDeclT<'src, K>]>,
 }
 
 impl<'src, K: AstKind> Aggregate<'src, K> {
     pub fn new(
         name: &'src str,
-        extends: Option<TypeT<'src, K>>,
+        extends: Option<Box<TypeT<'src, K>>>,
         items: impl Into<Box<[ItemDeclT<'src, K>]>>,
     ) -> Self {
         Self {
@@ -130,7 +130,7 @@ impl<'src, K: AstKind> Aggregate<'src, K> {
     pub fn unwrapped(self) -> Aggregate<'src> {
         Aggregate {
             name: self.name,
-            extends: self.extends.map(Wrapper::into_val),
+            extends: self.extends.map(|ty| (*ty).into_val().into()),
             items: self
                 .items
                 .into_vec()
@@ -144,20 +144,24 @@ impl<'src, K: AstKind> Aggregate<'src, K> {
 #[derive_where(Debug, PartialEq)]
 pub struct Field<'src, K: AstKind = Identity> {
     pub name: &'src str,
-    pub ty: TypeT<'src, K>,
-    pub default: Option<ExprT<'src, K>>,
+    pub ty: Box<TypeT<'src, K>>,
+    pub default: Option<Box<ExprT<'src, K>>>,
 }
 
 impl<'src, K: AstKind> Field<'src, K> {
-    pub fn new(name: &'src str, ty: TypeT<'src, K>, default: Option<ExprT<'src, K>>) -> Self {
+    pub fn new(
+        name: &'src str,
+        ty: Box<TypeT<'src, K>>,
+        default: Option<Box<ExprT<'src, K>>>,
+    ) -> Self {
         Self { name, ty, default }
     }
 
     pub fn unwrapped(self) -> Field<'src> {
         Field {
             name: self.name,
-            ty: self.ty.into_val(),
-            default: self.default.map(|d| d.into_val().unwrapped()),
+            ty: (*self.ty).into_val().into(),
+            default: self.default.map(|d| (*d).into_val().unwrapped().into()),
         }
     }
 }
@@ -166,7 +170,7 @@ impl<'src, K: AstKind> Field<'src, K> {
 pub struct Function<'src, K: AstKind = Identity> {
     pub name: &'src str,
     pub params: Box<[ParamT<'src, K>]>,
-    pub return_ty: Option<TypeT<'src, K>>,
+    pub return_ty: Option<Box<TypeT<'src, K>>>,
     pub body: Option<FunctionBody<'src, K>>,
 }
 
@@ -174,7 +178,7 @@ impl<'src, K: AstKind> Function<'src, K> {
     pub fn new(
         name: &'src str,
         params: impl Into<Box<[ParamT<'src, K>]>>,
-        return_ty: Option<TypeT<'src, K>>,
+        return_ty: Option<Box<TypeT<'src, K>>>,
         body: Option<FunctionBody<'src, K>>,
     ) -> Self {
         Self {
@@ -194,7 +198,7 @@ impl<'src, K: AstKind> Function<'src, K> {
                 .into_iter()
                 .map(|p| p.into_val().unwrapped())
                 .collect(),
-            return_ty: self.return_ty.map(Wrapper::into_val),
+            return_ty: self.return_ty.map(|ty| (*ty).into_val().into()),
             body: self.body.map(|b| b.into_val().unwrapped()),
         }
     }
@@ -830,5 +834,6 @@ mod tests {
     fn sizes() {
         assert_eq!(mem::size_of::<Expr<'_>>(), 48);
         assert_eq!(mem::size_of::<Stmt<'_>>(), 48);
+        assert_eq!(mem::size_of::<Item<'_>>(), 64);
     }
 }

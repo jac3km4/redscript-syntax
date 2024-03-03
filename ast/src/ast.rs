@@ -110,14 +110,14 @@ impl<'src, K: AstKind> Item<'src, K> {
 #[derive_where(Debug, PartialEq)]
 pub struct Aggregate<'src, K: AstKind = Identity> {
     pub name: &'src str,
-    pub extends: Option<&'src str>,
+    pub extends: Option<TypeT<'src, K>>,
     pub items: Box<[ItemDeclT<'src, K>]>,
 }
 
 impl<'src, K: AstKind> Aggregate<'src, K> {
     pub fn new(
         name: &'src str,
-        extends: Option<&'src str>,
+        extends: Option<TypeT<'src, K>>,
         items: impl Into<Box<[ItemDeclT<'src, K>]>>,
     ) -> Self {
         Self {
@@ -130,7 +130,7 @@ impl<'src, K: AstKind> Aggregate<'src, K> {
     pub fn unwrapped(self) -> Aggregate<'src> {
         Aggregate {
             name: self.name,
-            extends: self.extends,
+            extends: self.extends.map(Wrapper::into_val),
             items: self
                 .items
                 .into_vec()
@@ -506,6 +506,7 @@ pub enum Expr<'src, K: AstKind = Identity> {
     },
     Call {
         expr: Box<ExprT<'src, K>>,
+        type_args: Box<[TypeT<'src, K>]>,
         args: Box<[ExprT<'src, K>]>,
     },
     Member {
@@ -567,8 +568,17 @@ impl<'src, K: AstKind> Expr<'src, K> {
                 op,
                 expr: (*expr).into_val().unwrapped().into(),
             },
-            Expr::Call { expr: callee, args } => Expr::Call {
-                expr: (*callee).into_val().unwrapped().into(),
+            Expr::Call {
+                expr,
+                type_args,
+                args,
+            } => Expr::Call {
+                expr: (*expr).into_val().unwrapped().into(),
+                type_args: type_args
+                    .into_vec()
+                    .into_iter()
+                    .map(Wrapper::into_val)
+                    .collect(),
                 args: args
                     .into_vec()
                     .into_iter()

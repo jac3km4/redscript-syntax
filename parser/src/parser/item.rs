@@ -132,7 +132,11 @@ fn aggregate<'tok, 'src: 'tok>(
 
     is_struct
         .then(ident())
-        .then(just(Token::Ident("extends")).ignore_then(ident()).or_not())
+        .then(
+            just(Token::Ident("extends"))
+                .ignore_then(type_with_span())
+                .or_not(),
+        )
         .then(items)
         .then_ignore(just(Token::Semicolon).or_not())
         .map(|(((is_struct, name), extends), items)| {

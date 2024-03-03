@@ -146,7 +146,11 @@ impl Formattable for Import<'_> {
 
 impl<K: AstKind> Formattable for Aggregate<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
-        writeln!(f, "{} {{", self.name)?;
+        write!(f, "{}", self.name)?;
+        if let Some(extends) = &self.extends {
+            write!(f, " extends {}", extends.as_val().as_fmt(ctx))?;
+        }
+        writeln!(f, " {{")?;
         format_items(self.items.iter().map(Wrapper::as_val), f, ctx.bump(1))?;
         write!(f, "{}}}", ctx.ws())
     }
@@ -397,13 +401,28 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                     write!(f, "({}{})", op.as_fmt(ctx), expr)
                 }
             }
-            Expr::Call { expr, args } => {
+            Expr::Call {
+                expr,
+                type_args,
+                args,
+            } => {
                 write!(
                     f,
-                    "{}({})",
+                    "{}",
                     (**expr)
                         .as_val()
-                        .as_fmt(ctx.with_parent_op(ParentOp::TopPrec)),
+                        .as_fmt(ctx.with_parent_op(ParentOp::TopPrec))
+                )?;
+                if !type_args.is_empty() {
+                    write!(
+                        f,
+                        "<{}>",
+                        SepBy(type_args.iter().map(Wrapper::as_val), ", ", ctx)
+                    )?;
+                }
+                write!(
+                    f,
+                    "({})",
                     SepByMultiline(
                         args.iter().map(Wrapper::as_val),
                         ", ",
@@ -693,7 +712,11 @@ impl<A: Formattable> Formattable for &A {
 
 enum Chain<'ast, 'src, K: AstKind> {
     Member(&'src str),
-    Call(&'src str, &'ast [K::Inner<Expr<'src, K>>]),
+    Call(
+        &'src str,
+        &'ast [K::Inner<Type<'src>>],
+        &'ast [K::Inner<Expr<'src, K>>],
+    ),
     Index(&'ast Expr<'src, K>),
 }
 
@@ -714,10 +737,14 @@ fn format_member<K: AstKind>(
                 cur = (**expr).as_val();
                 chain.push(Chain::Index((**index).as_val()));
             }
-            Expr::Call { expr, args } => {
+            Expr::Call {
+                expr,
+                type_args,
+                args,
+            } => {
                 if let Expr::Member { expr, member } = (**expr).as_val() {
                     cur = (**expr).as_val();
-                    chain.push(Chain::Call(member, &args[..]));
+                    chain.push(Chain::Call(member, &type_args[..], &args[..]));
                 } else {
                     break;
                 }
@@ -743,16 +770,23 @@ fn format_member<K: AstKind>(
                 }
                 write!(f, ".{}", member)?
             }
-            Chain::Call(member, args) => {
+            Chain::Call(member, type_args, args) => {
                 if break_line {
                     writeln!(f)?;
                     write!(f, "{}", ctx.ws())?
                 }
+                write!(f, ".{}", member)?;
+                if !type_args.is_empty() {
+                    write!(
+                        f,
+                        "<{}>",
+                        SepBy(type_args.iter().map(Wrapper::as_val), ", ", ctx)
+                    )?
+                }
                 write!(
                     f,
-                    ".{}({})",
-                    member,
-                    SepBy(args.iter().map(Wrapper::as_val), ", ", ctx)
+                    "({})",
+                    SepByMultiline(args.iter().map(Wrapper::as_val), ", ", ctx)
                 )?
             }
             Chain::Index(index) => write!(f, "[{}]", index.as_fmt(ctx))?,

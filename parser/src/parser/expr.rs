@@ -2,7 +2,7 @@ use std::iter;
 
 use crate::{lexer::Token, parser_input};
 use chumsky::prelude::*;
-use redscript_ast::{Assoc, BinOp, Constant, Expr, Span, SpannedExpr, StrPart, UnOp};
+use redscript_ast::{Assoc, BinOp, Constant, Expr, Span, SpannedExpr, StrPart, Type, UnOp};
 
 use super::{ident, type_with_span, Parse};
 
@@ -97,6 +97,12 @@ pub fn inner_expr_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, (Spann
             .allow_trailing()
             .collect::<Vec<_>>()
             .delimited_by(just(Token::LParen), just(Token::RParen));
+        let type_arguments = ty
+            .clone()
+            .separated_by(just(Token::Comma))
+            .allow_trailing()
+            .collect::<Vec<_>>()
+            .delimited_by(just(Token::LAngle), just(Token::RAngle));
 
         let new = just(Token::Ident("new"))
             .ignore_then(ty.clone())
@@ -144,7 +150,12 @@ pub fn inner_expr_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, (Spann
             .clone()
             .delimited_by(just(Token::LBracket), just(Token::RBracket))
             .map(|args| TopPrecedence::ArrayAccess(args.into()));
-        let call = arguments.map(|arg| TopPrecedence::Call(arg.into()));
+        let call = type_arguments
+            .or_not()
+            .then(arguments)
+            .map(|(targs, args)| {
+                TopPrecedence::Call(targs.unwrap_or_default().into(), args.into())
+            });
         let member = atom
             .foldl_with(
                 choice((member_access, array_access, call)).repeated(),
@@ -153,7 +164,11 @@ pub fn inner_expr_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, (Spann
                     let res = match member {
                         TopPrecedence::MemberAccess(member) => Expr::Member { expr, member },
                         TopPrecedence::ArrayAccess(index) => Expr::Index { expr, index },
-                        TopPrecedence::Call(args) => Expr::Call { expr, args },
+                        TopPrecedence::Call(type_args, args) => Expr::Call {
+                            expr,
+                            type_args,
+                            args,
+                        },
                     };
                     (res, e.span())
                 },
@@ -254,7 +269,7 @@ where
 
 #[derive(Debug)]
 enum TopPrecedence<'src> {
-    Call(Box<[(SpannedExpr<'src>, Span)]>),
+    Call(Box<[(Type<'src>, Span)]>, Box<[(SpannedExpr<'src>, Span)]>),
     ArrayAccess(Box<(SpannedExpr<'src>, Span)>),
     MemberAccess(&'src str),
 }
@@ -307,6 +322,21 @@ mod tests {
     }
 
     #[test]
+    fn comparison() {
+        let code = r#"5 > 4"#;
+        let res = parse_expr(code, FileId::from_u32(0)).0.unwrap().unwrapped();
+
+        assert_eq!(
+            res,
+            Expr::BinOp {
+                lhs: Expr::Constant(Constant::I32(5)).into(),
+                op: BinOp::Gt,
+                rhs: Expr::Constant(Constant::I32(4)).into()
+            }
+        );
+    }
+
+    #[test]
     fn nested_ternary() {
         let code = "true ? false ? 1 : 2 : 3";
         let res = parse_expr(code, FileId::from_u32(0)).0.unwrap().unwrapped();
@@ -348,6 +378,7 @@ mod tests {
                             .into(),
                         }
                         .into(),
+                        type_args: [].into(),
                         args: [].into(),
                     }
                     .into(),
@@ -396,6 +427,21 @@ mod tests {
                 ]
                 .into()
             )
+        );
+    }
+
+    #[test]
+    fn cast() {
+        let code = r#"Cast<Uint8>(1)"#;
+        let res = parse_expr(code, FileId::from_u32(0)).0.unwrap().unwrapped();
+
+        assert_eq!(
+            res,
+            Expr::Call {
+                expr: Expr::Ident("Cast".into()).into(),
+                type_args: [Type::plain("Uint8")].into(),
+                args: [Expr::Constant(Constant::I32(1))].into(),
+            }
         );
     }
 

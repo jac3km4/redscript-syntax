@@ -236,6 +236,7 @@ mod tests {
                 body: Block::single(Stmt::Expr(
                     Expr::Call {
                         expr: Expr::Ident("print").into(),
+                        type_args: [].into(),
                         args: [Expr::Ident("i")].into(),
                     }
                     .into()

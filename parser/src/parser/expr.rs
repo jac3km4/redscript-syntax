@@ -108,7 +108,7 @@ pub fn inner_expr_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, (Spann
             .ignore_then(ty.clone())
             .then(arguments.clone())
             .map(|(ty, args)| Expr::New {
-                ty,
+                ty: ty.into(),
                 args: args.into(),
             });
 
@@ -192,6 +192,7 @@ pub fn inner_expr_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, (Spann
             just(Token::Ident("as")).ignore_then(ty).repeated(),
             |expr, ty, e| {
                 let expr = Box::new(expr);
+                let ty = Box::new(ty);
                 (Expr::DynCast { expr, ty }, e.span())
             },
         );

@@ -220,7 +220,7 @@ impl<K: AstKind> Formattable for Stmt<'_, K> {
             Stmt::Let { name, ty, value } => {
                 write!(f, "{}let {name}", ctx.ws())?;
                 if let Some(ty) = ty {
-                    write!(f, ": {}", ty.as_val().as_fmt(ctx))?;
+                    write!(f, ": {}", (**ty).as_val().as_fmt(ctx))?;
                 }
                 if let Some(value) = value {
                     write!(f, " = {}", (**value).as_val().as_fmt(ctx))?;
@@ -450,7 +450,7 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                     f,
                     "{} as {}",
                     (**expr).as_val().as_fmt(ctx),
-                    ty.as_val().as_fmt(ctx)
+                    (**ty).as_val().as_fmt(ctx)
                 )
             }
             Expr::New { ty, args } => {
@@ -458,7 +458,7 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                 write!(
                     f,
                     "new {}({})",
-                    ty.as_val().as_fmt(ctx),
+                    (**ty).as_val().as_fmt(ctx),
                     SepByMultiline(args.iter().map(Wrapper::as_val), ", ", ctx)
                 )
             }

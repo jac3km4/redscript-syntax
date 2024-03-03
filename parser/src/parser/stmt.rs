@@ -32,6 +32,7 @@ pub fn stmt_rec<'tok, 'src: 'tok>(
         .then_ignore(semicolon.clone())
         .map(|((name, ty), value)| {
             let value = value.map(Box::new);
+            let ty = ty.map(Box::new);
             Stmt::Let { name, ty, value }
         });
 
@@ -80,7 +81,7 @@ pub fn stmt_rec<'tok, 'src: 'tok>(
     let while_stmt = just(Token::Ident("while"))
         .ignore_then(expr.clone().then(block.clone()))
         .then_ignore(just(Token::Semicolon).or_not())
-        .map(|(cond, body)| Stmt::While(ConditionalBlock::new(cond, body)));
+        .map(|(cond, body)| Stmt::While(ConditionalBlock::new(cond, body).into()));
 
     let for_stmt = just(Token::Ident("for"))
         .ignore_then(ident)
@@ -199,24 +200,27 @@ mod tests {
 
         assert_eq!(
             parse_stmt(code, FileId::from_u32(0)).0.unwrap().unwrapped(),
-            Stmt::While(ConditionalBlock::new(
-                Expr::BinOp {
-                    op: BinOp::Gt,
-                    lhs: Box::new(Expr::Ident("i")),
-                    rhs: Box::new(Expr::Constant(Constant::I32(0))),
-                },
-                Block::single(Stmt::Expr(
-                    Expr::Assign {
+            Stmt::While(
+                ConditionalBlock::new(
+                    Expr::BinOp {
+                        op: BinOp::Gt,
                         lhs: Box::new(Expr::Ident("i")),
-                        rhs: Box::new(Expr::BinOp {
-                            op: BinOp::Sub,
+                        rhs: Box::new(Expr::Constant(Constant::I32(0))),
+                    },
+                    Block::single(Stmt::Expr(
+                        Expr::Assign {
                             lhs: Box::new(Expr::Ident("i")),
-                            rhs: Box::new(Expr::Constant(Constant::I32(1))),
-                        }),
-                    }
-                    .into()
-                ))
-            ))
+                            rhs: Box::new(Expr::BinOp {
+                                op: BinOp::Sub,
+                                lhs: Box::new(Expr::Ident("i")),
+                                rhs: Box::new(Expr::Constant(Constant::I32(1))),
+                            }),
+                        }
+                        .into()
+                    ))
+                )
+                .into()
+            )
         )
     }
 
@@ -259,7 +263,7 @@ mod tests {
             res,
             Stmt::Let {
                 name: "a",
-                ty: Some(Type::plain("Int32")),
+                ty: Some(Type::plain("Int32").into()),
                 value: Some(Expr::Constant(Constant::I32(1)).into()),
             }
         )

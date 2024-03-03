@@ -369,7 +369,7 @@ impl<'src, K: AstKind> Block<'src, K> {
 pub enum Stmt<'src, K: AstKind = Identity> {
     Let {
         name: &'src str,
-        ty: Option<TypeT<'src, K>>,
+        ty: Option<Box<TypeT<'src, K>>>,
         value: Option<Box<ExprT<'src, K>>>,
     },
     Switch {
@@ -381,7 +381,7 @@ pub enum Stmt<'src, K: AstKind = Identity> {
         blocks: Box<[ConditionalBlock<'src, K>]>,
         else_: Option<Block<'src, K>>,
     },
-    While(ConditionalBlock<'src, K>),
+    While(Box<ConditionalBlock<'src, K>>),
     ForIn {
         name: &'src str,
         iter: Box<ExprT<'src, K>>,
@@ -397,7 +397,7 @@ impl<'src, K: AstKind> Stmt<'src, K> {
         match self {
             Stmt::Let { name, ty, value } => Stmt::Let {
                 name,
-                ty: ty.map(Wrapper::into_val),
+                ty: ty.map(|ty| (*ty).into_val().into()),
                 value: value.map(|v| (*v).into_val().unwrapped().into()),
             },
             Stmt::Switch {
@@ -426,7 +426,7 @@ impl<'src, K: AstKind> Stmt<'src, K> {
                     .collect(),
                 else_: else_.map(|b| b.into_val().unwrapped()),
             },
-            Stmt::While(block) => Stmt::While(block.into_val().unwrapped()),
+            Stmt::While(block) => Stmt::While(block.into_val().unwrapped().into()),
             Stmt::ForIn { name, iter, body } => Stmt::ForIn {
                 name,
                 iter: (*iter).into_val().unwrapped().into(),
@@ -519,10 +519,10 @@ pub enum Expr<'src, K: AstKind = Identity> {
     },
     DynCast {
         expr: Box<ExprT<'src, K>>,
-        ty: TypeT<'src, K>,
+        ty: Box<TypeT<'src, K>>,
     },
     New {
-        ty: TypeT<'src, K>,
+        ty: Box<TypeT<'src, K>>,
         args: Box<[ExprT<'src, K>]>,
     },
     Conditional {
@@ -595,10 +595,10 @@ impl<'src, K: AstKind> Expr<'src, K> {
             },
             Expr::DynCast { expr, ty } => Expr::DynCast {
                 expr: (*expr).into_val().unwrapped().into(),
-                ty: ty.into_val(),
+                ty: (*ty).into_val().into(),
             },
             Expr::New { ty, args } => Expr::New {
-                ty: ty.into_val(),
+                ty: (*ty).into_val().into(),
                 args: args
                     .into_vec()
                     .into_iter()
@@ -817,5 +817,18 @@ impl<A, B> Wrapper<A> for (A, B) {
     #[inline]
     fn into_val(self) -> A {
         self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::mem;
+
+    use super::*;
+
+    #[test]
+    fn sizes() {
+        assert_eq!(mem::size_of::<Expr<'_>>(), 48);
+        assert_eq!(mem::size_of::<Stmt<'_>>(), 48);
     }
 }

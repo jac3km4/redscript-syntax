@@ -664,7 +664,9 @@ where
             .into_iter()
             .map(|elem| elem.as_fmt(ctx.bump(1)).to_string())
             .collect();
-        if ctx.current_indent() + vec.iter().map(|s| s.len() as u16).sum::<u16>()
+        if ctx.current_indent()
+            + vec.iter().map(|s| s.len() as u16).sum::<u16>()
+            + (sep.len() * (vec.len() - 1)) as u16
             > ctx.settings.max_length
         {
             let sep = sep.trim_end();

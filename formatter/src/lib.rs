@@ -813,6 +813,7 @@ fn format_items<'a, 'c: 'a, K: AstKind + 'a>(
         let decl = decl.as_val();
         if !matches!(decl.item, Item::Import(_) | Item::Let(_))
             || discriminant != mem::discriminant(&decl.item)
+            || !decl.annotations.is_empty()
         {
             writeln!(f)?;
         }

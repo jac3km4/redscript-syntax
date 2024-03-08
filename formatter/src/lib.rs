@@ -807,17 +807,21 @@ fn format_items<'a, 'c: 'a, K: AstKind + 'a>(
         return Ok(());
     };
     let mut discriminant = mem::discriminant(&first.item);
+    let mut annotated = !first.annotations.is_empty();
     write!(f, "{}", first.as_fmt(ctx))?;
 
     for decl in it {
         let decl = decl.as_val();
+        let decl_is_annotated = !decl.annotations.is_empty();
         if !matches!(decl.item, Item::Import(_) | Item::Let(_))
             || discriminant != mem::discriminant(&decl.item)
-            || !decl.annotations.is_empty()
+            || annotated != decl_is_annotated
+            || decl_is_annotated
         {
             writeln!(f)?;
         }
         discriminant = mem::discriminant(&decl.item);
+        annotated = decl_is_annotated;
         write!(f, "{}", decl.as_fmt(ctx))?;
     }
 

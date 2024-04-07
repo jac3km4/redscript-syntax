@@ -10,8 +10,11 @@ use redscript_ast::{
 #[derive(Debug, Clone, Copy)]
 pub struct FormatSettings {
     pub indent: u16,
-    pub max_length: u16,
-    pub max_chain: u8,
+    pub max_width: u16,
+    pub max_chain_fields: u8,
+    pub max_chain_calls: u8,
+    pub max_chain_operators: u8,
+    pub max_chain_total: u8,
     pub trunc_sig_digits: Option<u8>,
 }
 
@@ -19,8 +22,11 @@ impl Default for FormatSettings {
     fn default() -> Self {
         Self {
             indent: 2,
-            max_length: 80,
-            max_chain: 2,
+            max_width: 80,
+            max_chain_fields: 4,
+            max_chain_calls: 2,
+            max_chain_operators: 4,
+            max_chain_total: 4,
             trunc_sig_digits: None,
         }
     }
@@ -40,17 +46,15 @@ impl FormatCtx<'_> {
 
     fn bump(&self, n: u16) -> Self {
         Self {
-            settings: self.settings,
             depth: self.depth + n,
-            parent: self.parent,
+            ..*self
         }
     }
 
     fn decrement(&self) -> Self {
         Self {
-            settings: self.settings,
             depth: self.depth - 1,
-            parent: self.parent,
+            ..*self
         }
     }
 
@@ -363,39 +367,11 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                     (**rhs).as_val().as_fmt(ctx)
                 )
             }
-            Expr::BinOp { lhs, op, rhs } => {
-                let can_assoc = match ctx.parent {
-                    Some(ParentOp::TopPrec | ParentOp::Unary) => false,
-                    Some(ParentOp::BinaryLhs(parent)) | Some(ParentOp::BinaryRhs(parent))
-                        if parent.precedence() < op.precedence() =>
-                    {
-                        true
-                    }
-                    Some(ParentOp::BinaryLhs(parent)) => {
-                        parent.precedence() == op.precedence() && parent.assoc() == Assoc::Left
-                    }
-                    Some(ParentOp::BinaryRhs(parent)) => {
-                        parent.precedence() == op.precedence() && parent.assoc() == Assoc::Right
-                    }
-                    None => true,
-                };
-                let lhs = (**lhs)
-                    .as_val()
-                    .as_fmt(ctx.with_parent_op(ParentOp::BinaryLhs(*op)));
-                let rhs = (**rhs)
-                    .as_val()
-                    .as_fmt(ctx.with_parent_op(ParentOp::BinaryRhs(*op)));
-                if can_assoc {
-                    write!(f, "{} {} {}", lhs, op.as_fmt(ctx), rhs)
-                } else {
-                    write!(f, "({} {} {})", lhs, op.as_fmt(ctx), rhs)
-                }
-            }
+            Expr::BinOp { .. } => format_chain(self, f, ctx),
             Expr::UnOp { op, expr } => {
-                let can_assoc = !matches!(ctx.parent, Some(ParentOp::TopPrec));
                 let ctx = ctx.with_parent_op(ParentOp::Unary);
                 let expr = (**expr).as_val().as_fmt(ctx);
-                if can_assoc {
+                if !matches!(ctx.parent, Some(ParentOp::TopPrec)) {
                     write!(f, "{}{}", op.as_fmt(ctx), expr)
                 } else {
                     write!(f, "({}{})", op.as_fmt(ctx), expr)
@@ -406,34 +382,20 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                 type_args,
                 args,
             } => {
-                write!(
-                    f,
-                    "{}",
-                    (**expr)
-                        .as_val()
-                        .as_fmt(ctx.with_parent_op(ParentOp::TopPrec))
-                )?;
-                if !type_args.is_empty() {
+                if let Expr::Member { .. } = (**expr).as_val() {
+                    format_chain(self, f, ctx.without_parent_op())
+                } else {
                     write!(
                         f,
-                        "<{}>",
-                        SepBy(type_args.iter().map(Wrapper::as_val), ", ", ctx)
+                        "{}",
+                        (**expr)
+                            .as_val()
+                            .as_fmt(ctx.with_parent_op(ParentOp::TopPrec))
                     )?;
+                    format_call_args::<K>(type_args, args, f, ctx)
                 }
-                write!(
-                    f,
-                    "({})",
-                    SepByMultiline(
-                        args.iter().map(Wrapper::as_val),
-                        ", ",
-                        ctx.without_parent_op()
-                    )
-                )
             }
-            Expr::Member { .. } => {
-                let ctx = ctx.without_parent_op();
-                format_member(self, f, ctx)
-            }
+            Expr::Member { .. } => format_chain(self, f, ctx.without_parent_op()),
             Expr::Index { expr, index } => {
                 write!(
                     f,
@@ -661,13 +623,12 @@ where
         let Self(iter, sep, ctx) = self;
         let vec: Vec<_> = iter
             .clone()
-            .into_iter()
             .map(|elem| elem.as_fmt(ctx.bump(1)).to_string())
             .collect();
         if ctx.current_indent()
             + vec.iter().map(|s| s.len() as u16).sum::<u16>()
             + (sep.len() * (vec.len().max(1) - 1)) as u16
-            > ctx.settings.max_length
+            > ctx.settings.max_width
         {
             let sep = sep.trim_end();
             let ctx = ctx.bump(1);
@@ -719,24 +680,36 @@ enum Chain<'ast, 'src, K: AstKind> {
         &'ast [K::Inner<Type<'src>>],
         &'ast [K::Inner<Expr<'src, K>>],
     ),
+    Op(BinOp, &'ast Expr<'src, K>),
     Index(&'ast Expr<'src, K>),
 }
 
-fn format_member<K: AstKind>(
+fn format_chain<K: AstKind>(
     expr: &Expr<'_, K>,
     f: &mut fmt::Formatter<'_>,
     ctx: FormatCtx<'_>,
 ) -> fmt::Result {
     let mut cur = expr;
     let mut chain = vec![];
-    loop {
+
+    let mut chain_fields = 0;
+    let mut chain_calls = 0;
+    let mut chain_ops = 0;
+
+    let mut cur_parent = ctx.parent;
+    let ctx = ctx.without_parent_op();
+
+    let parenthesize = loop {
         match cur {
             Expr::Member { expr, member } => {
                 cur = (**expr).as_val();
+                cur_parent = Some(ParentOp::TopPrec);
                 chain.push(Chain::Member(member));
+                chain_fields += 1;
             }
             Expr::Index { expr, index } => {
                 cur = (**expr).as_val();
+                cur_parent = Some(ParentOp::TopPrec);
                 chain.push(Chain::Index((**index).as_val()));
             }
             Expr::Call {
@@ -746,54 +719,75 @@ fn format_member<K: AstKind>(
             } => {
                 if let Expr::Member { expr, member } = (**expr).as_val() {
                     cur = (**expr).as_val();
+                    cur_parent = Some(ParentOp::TopPrec);
                     chain.push(Chain::Call(member, &type_args[..], &args[..]));
+                    chain_calls += 1;
                 } else {
-                    break;
+                    break false;
                 }
             }
-            _ => break,
+            Expr::BinOp { lhs, op, rhs } => {
+                if cur_parent.is_some_and(|parent| !parent.can_assoc(*op)) {
+                    break true;
+                }
+                cur = (**lhs).as_val();
+                cur_parent = Some(ParentOp::BinaryLhs(*op));
+                chain.push(Chain::Op(*op, (**rhs).as_val()));
+                chain_ops += 1;
+            }
+            Expr::UnOp { .. }
+            | Expr::Conditional { .. }
+            | Expr::DynCast { .. }
+            | Expr::New { .. } => {
+                break true;
+            }
+            _ => break false,
         };
+    };
+
+    if parenthesize {
+        write!(f, "({})", cur.as_fmt(ctx))?;
+    } else {
+        write!(f, "{}", cur.as_fmt(ctx))?;
     }
 
-    let break_line = chain
-        .iter()
-        .filter(|i| matches!(i, Chain::Member(..) | Chain::Call(..)))
-        .count()
-        > usize::from(ctx.settings.max_chain);
-
-    write!(f, "{}", cur.as_fmt(ctx.with_parent_op(ParentOp::TopPrec)))?;
     let ctx = ctx.bump(1);
+    let break_line = chain_fields > usize::from(ctx.settings.max_chain_fields)
+        || chain_calls > usize::from(ctx.settings.max_chain_calls)
+        || chain_ops > usize::from(ctx.settings.max_chain_operators)
+        || chain.len() > usize::from(ctx.settings.max_chain_total);
+
     for i in chain.into_iter().rev() {
         match i {
             Chain::Member(member) => {
                 if break_line {
                     writeln!(f)?;
-                    write!(f, "{}", ctx.ws())?
+                    write!(f, "{}", ctx.ws())?;
                 }
-                write!(f, ".{}", member)?
+                write!(f, ".{}", member)?;
             }
             Chain::Call(member, type_args, args) => {
                 if break_line {
                     writeln!(f)?;
-                    write!(f, "{}", ctx.ws())?
+                    write!(f, "{}", ctx.ws())?;
                 }
                 write!(f, ".{}", member)?;
-                if !type_args.is_empty() {
-                    write!(
-                        f,
-                        "<{}>",
-                        SepBy(type_args.iter().map(Wrapper::as_val), ", ", ctx)
-                    )?
-                }
-                write!(
-                    f,
-                    "({})",
-                    SepByMultiline(args.iter().map(Wrapper::as_val), ", ", ctx)
-                )?
+                format_call_args::<K>(type_args, args, f, ctx)?;
             }
             Chain::Index(index) => write!(f, "[{}]", index.as_fmt(ctx))?,
+            Chain::Op(op, rhs) => {
+                let ctx = ctx.with_parent_op(ParentOp::BinaryRhs(op));
+                if break_line {
+                    writeln!(f)?;
+                    write!(f, "{}", ctx.ws())?;
+                } else {
+                    write!(f, " ")?;
+                }
+                write!(f, "{} {}", op.as_fmt(ctx), rhs.as_fmt(ctx))?;
+            }
         }
     }
+
     Ok(())
 }
 
@@ -852,10 +846,49 @@ fn format_stmts<'a, 'c: 'a, K: AstKind + 'a>(
     Ok(())
 }
 
+fn format_call_args<K: AstKind>(
+    type_args: &[K::Inner<Type<'_>>],
+    args: &[K::Inner<Expr<'_, K>>],
+    f: &mut fmt::Formatter<'_>,
+    ctx: FormatCtx<'_>,
+) -> fmt::Result {
+    if !type_args.is_empty() {
+        write!(
+            f,
+            "<{}>",
+            SepBy(type_args.iter().map(Wrapper::as_val), ", ", ctx)
+        )?;
+    }
+    write!(
+        f,
+        "({})",
+        SepByMultiline(args.iter().map(Wrapper::as_val), ", ", ctx)
+    )
+}
+
 #[derive(Debug, Clone, Copy)]
 enum ParentOp {
     Unary,
     BinaryLhs(BinOp),
     BinaryRhs(BinOp),
     TopPrec,
+}
+
+impl ParentOp {
+    fn can_assoc(&self, op: BinOp) -> bool {
+        match self {
+            ParentOp::TopPrec | ParentOp::Unary => false,
+            ParentOp::BinaryLhs(parent) | ParentOp::BinaryRhs(parent)
+                if parent.precedence() < op.precedence() =>
+            {
+                true
+            }
+            ParentOp::BinaryLhs(parent) => {
+                parent.precedence() == op.precedence() && parent.assoc() == Assoc::Left
+            }
+            ParentOp::BinaryRhs(parent) => {
+                parent.precedence() == op.precedence() && parent.assoc() == Assoc::Right
+            }
+        }
+    }
 }

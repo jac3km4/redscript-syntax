@@ -367,14 +367,15 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                     (**rhs).as_val().as_fmt(ctx)
                 )
             }
-            Expr::BinOp { .. } => format_chain(self, f, ctx),
+            Expr::Member { .. } | Expr::BinOp { .. } => format_chain(self, f, ctx),
             Expr::UnOp { op, expr } => {
+                let parenthesize = matches!(ctx.parent, Some(ParentOp::TopPrec));
                 let ctx = ctx.with_parent_op(ParentOp::Unary);
                 let expr = (**expr).as_val().as_fmt(ctx);
-                if !matches!(ctx.parent, Some(ParentOp::TopPrec)) {
-                    write!(f, "{}{}", op.as_fmt(ctx), expr)
-                } else {
+                if parenthesize {
                     write!(f, "({}{})", op.as_fmt(ctx), expr)
+                } else {
+                    write!(f, "{}{}", op.as_fmt(ctx), expr)
                 }
             }
             Expr::Call {
@@ -383,7 +384,7 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                 args,
             } => {
                 if let Expr::Member { .. } = (**expr).as_val() {
-                    format_chain(self, f, ctx.without_parent_op())
+                    format_chain(self, f, ctx)
                 } else {
                     write!(
                         f,
@@ -395,7 +396,6 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                     format_call_args::<K>(type_args, args, f, ctx)
                 }
             }
-            Expr::Member { .. } => format_chain(self, f, ctx.without_parent_op()),
             Expr::Index { expr, index } => {
                 write!(
                     f,
@@ -407,13 +407,15 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                 )
             }
             Expr::DynCast { expr, ty } => {
-                let ctx = ctx.with_parent_op(ParentOp::TopPrec);
-                write!(
-                    f,
-                    "{} as {}",
-                    (**expr).as_val().as_fmt(ctx),
-                    (**ty).as_val().as_fmt(ctx)
-                )
+                let parenthesize = matches!(ctx.parent, Some(ParentOp::TopPrec | ParentOp::Unary));
+                let ctx = ctx.with_parent_op(ParentOp::Unary);
+                let expr = (**expr).as_val().as_fmt(ctx);
+                let ty = (**ty).as_val().as_fmt(ctx);
+                if parenthesize {
+                    write!(f, "({} as {})", expr, ty)
+                } else {
+                    write!(f, "{} as {}", expr, ty)
+                }
             }
             Expr::New { ty, args } => {
                 let ctx = ctx.without_parent_op();
@@ -425,14 +427,16 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                 )
             }
             Expr::Conditional { cond, then, else_ } => {
+                let parenthesize = ctx.parent.is_some();
                 let ctx = ctx.without_parent_op();
-                write!(
-                    f,
-                    "{} ? {} : {}",
-                    (**cond).as_val().as_fmt(ctx),
-                    (**then).as_val().as_fmt(ctx),
-                    (**else_).as_val().as_fmt(ctx)
-                )
+                let cond = (**cond).as_val().as_fmt(ctx);
+                let then = (**then).as_val().as_fmt(ctx);
+                let else_ = (**else_).as_val().as_fmt(ctx);
+                if parenthesize {
+                    write!(f, "({} ? {} : {})", cond, then, else_)
+                } else {
+                    write!(f, "{} ? {} : {}", cond, then, else_)
+                }
             }
             Expr::This => write!(f, "this"),
             Expr::Super => write!(f, "super"),
@@ -735,11 +739,14 @@ fn format_chain<K: AstKind>(
                 chain.push(Chain::Op(*op, (**rhs).as_val()));
                 chain_ops += 1;
             }
-            Expr::UnOp { .. }
-            | Expr::Conditional { .. }
-            | Expr::DynCast { .. }
-            | Expr::New { .. } => {
-                break true;
+            Expr::Conditional { .. } => {
+                break cur_parent.is_some();
+            }
+            Expr::DynCast { .. } => {
+                break matches!(cur_parent, Some(ParentOp::TopPrec | ParentOp::Unary));
+            }
+            Expr::UnOp { .. } | Expr::New { .. } => {
+                break matches!(cur_parent, Some(ParentOp::TopPrec));
             }
             _ => break false,
         };

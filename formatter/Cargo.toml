@@ -8,5 +8,9 @@ edition.workspace = true
 pretty_dtoa.workspace = true
 redscript-ast = { path = "../ast" }
 
+[dev-dependencies]
+pretty_assertions.workspace = true
+redscript-parser = { path = "../parser" }
+
 [lints]
 workspace = true

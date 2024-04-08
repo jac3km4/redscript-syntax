@@ -1,0 +1,4 @@
+module Dummy
+
+struct Dummy {
+}

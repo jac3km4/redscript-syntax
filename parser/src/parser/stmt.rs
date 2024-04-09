@@ -144,11 +144,11 @@ mod tests {
             Stmt::If {
                 blocks: [
                     ConditionalBlock::new(
-                        Expr::Constant(Constant::Bool(true)).into(),
+                        Expr::Constant(Constant::Bool(true)),
                         Block::single(Stmt::Return(Some(Expr::Constant(Constant::I32(1)).into())))
                     ),
                     ConditionalBlock::new(
-                        Expr::Constant(Constant::Bool(false)).into(),
+                        Expr::Constant(Constant::Bool(false)),
                         Block::single(Stmt::Return(Some(Expr::Constant(Constant::I32(2)).into())))
                     ),
                 ]
@@ -221,7 +221,7 @@ mod tests {
                 )
                 .into()
             )
-        )
+        );
     }
 
     #[test]
@@ -266,7 +266,7 @@ mod tests {
                 ty: Some(Type::plain("Int32").into()),
                 value: Some(Expr::Constant(Constant::I32(1)).into()),
             }
-        )
+        );
     }
 
     #[test]
@@ -285,7 +285,7 @@ mod tests {
         assert_eq!(
             stmt.expect("should parse").unwrapped(),
             Stmt::Expr(Expr::Ident("a").into())
-        )
+        );
     }
 
     #[test]
@@ -304,6 +304,6 @@ mod tests {
         assert_eq!(
             stmt.expect("should parse").unwrapped(),
             Stmt::Expr(Expr::Ident("a").into())
-        )
+        );
     }
 }

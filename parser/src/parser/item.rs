@@ -275,9 +275,7 @@ mod tests {
                                 Expr::Ident("arg").into()
                             )))))
                         )
-                        .into()
                     )
-                    .into()
                 )]
             ))
         );
@@ -325,7 +323,7 @@ mod tests {
                         [],
                         None,
                         ItemQualifiers::empty(),
-                        Item::Let(Field::new("a", Type::plain("Int32").into(), None)).into()
+                        Item::Let(Field::new("a", Type::plain("Int32").into(), None))
                     ),
                     ItemDecl::new(
                         [],
@@ -336,7 +334,6 @@ mod tests {
                             Type::plain("Int32").into(),
                             Some(Expr::Constant(Constant::I32(3)).into())
                         ))
-                        .into()
                     ),
                 ]
             ))
@@ -365,7 +362,6 @@ mod tests {
                         Expr::Ident("arg1").into()
                     )))))
                 )
-                .into()
             )
         );
     }
@@ -385,12 +381,12 @@ mod tests {
                 .unwrapped(),
             ItemDecl::new(
                 [
-                    Annotation::new("if", [Expr::Constant(Constant::Bool(true)).into()]),
+                    Annotation::new("if", [Expr::Constant(Constant::Bool(true))]),
                     Annotation::new("replaceGlobal", [])
                 ],
                 None,
                 ItemQualifiers::empty(),
-                Item::Function(Function::new("Test", [], None, None).into()).into()
+                Item::Function(Function::new("Test", [], None, None))
             )
         );
     }

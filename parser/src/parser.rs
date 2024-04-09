@@ -144,7 +144,7 @@ mod tests {
         assert_eq!(
             res,
             Module::new(
-                Some(Path::new(["Dummy".into()])),
+                Some(Path::new(["Dummy"])),
                 [
                     ItemDecl::new(
                         [],
@@ -157,7 +157,7 @@ mod tests {
                         None,
                         ItemQualifiers::empty(),
                         Item::Import(Import::Select(
-                            Path::new(["Something".into()]),
+                            Path::new(["Something"]),
                             ["Test1", "Test2"].into()
                         ))
                     ),

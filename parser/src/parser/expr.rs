@@ -295,7 +295,7 @@ mod tests {
                     lhs: Expr::BinOp {
                         lhs: Expr::UnOp {
                             op: UnOp::Neg,
-                            expr: Expr::Ident("b".into()).into()
+                            expr: Expr::Ident("b").into()
                         }
                         .into(),
                         op: BinOp::Add,
@@ -367,12 +367,12 @@ mod tests {
                 expr: Expr::Index {
                     expr: Expr::Call {
                         expr: Expr::Member {
-                            member: "method".into(),
+                            member: "method",
                             expr: Expr::Index {
-                                expr: Expr::Ident("obj".into()).into(),
+                                expr: Expr::Ident("obj").into(),
                                 index: Expr::Member {
-                                    expr: Expr::Ident("obj".into()).into(),
-                                    member: "index".into(),
+                                    expr: Expr::Ident("obj").into(),
+                                    member: "index",
                                 }
                                 .into(),
                             }
@@ -386,7 +386,7 @@ mod tests {
                     index: Expr::Constant(Constant::I32(0)).into(),
                 }
                 .into(),
-                member: "field".into(),
+                member: "field",
             }
         );
     }
@@ -439,7 +439,7 @@ mod tests {
         assert_eq!(
             res,
             Expr::Call {
-                expr: Expr::Ident("Cast".into()).into(),
+                expr: Expr::Ident("Cast").into(),
                 type_args: [Type::plain("Uint8")].into(),
                 args: [Expr::Constant(Constant::I32(1))].into(),
             }

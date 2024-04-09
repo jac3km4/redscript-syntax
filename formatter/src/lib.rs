@@ -619,34 +619,29 @@ where
 
 struct SepByMultiline<'s, I>(I, &'static str, FormatCtx<'s>);
 
-impl<I: Iterator + Clone> fmt::Display for SepByMultiline<'_, I>
+impl<'a, I: ExactSizeIterator<Item = &'a E> + Clone, E> fmt::Display for SepByMultiline<'_, I>
 where
-    I::Item: Formattable,
+    E: ApproxWidth + Formattable + 'a,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let Self(iter, sep, ctx) = self;
-        let vec: Vec<_> = iter
-            .clone()
-            .map(|elem| elem.as_fmt(ctx.bump(1)).to_string())
-            .collect();
-        if ctx.current_indent()
-            + vec.iter().map(|s| s.len() as u16).sum::<u16>()
-            + (sep.len() * (vec.len().max(1) - 1)) as u16
-            > ctx.settings.max_width
-        {
+        let width = iter.clone().map(ApproxWidth::approx_width).sum::<u16>()
+            + (sep.len() * (iter.len().max(1) - 1)) as u16;
+
+        if ctx.current_indent() + width > ctx.settings.max_width {
             let sep = sep.trim_end();
             let ctx = ctx.bump(1);
-            for (i, elem) in vec.iter().enumerate() {
+            for (i, elem) in iter.clone().enumerate() {
                 if i > 0 {
                     write!(f, "{sep}")?;
                 }
                 writeln!(f)?;
-                write!(f, "{}{}", ctx.ws(), elem)?;
+                write!(f, "{}{}", ctx.ws(), elem.as_fmt(ctx))?;
             }
             writeln!(f)?;
             write!(f, "{}", ctx.decrement().ws())
         } else {
-            write!(f, "{}", SepBy(vec.iter().map(String::as_str), ", ", *ctx))
+            write!(f, "{}", SepBy(iter.clone(), ", ", *ctx))
         }
     }
 }
@@ -705,6 +700,29 @@ fn format_chain<K: AstKind>(
 
     let parenthesize = loop {
         match cur {
+            // handle expressions that might require parentheses first
+            Expr::Conditional { .. } => {
+                break cur_parent.is_some();
+            }
+            Expr::DynCast { .. } => {
+                break matches!(cur_parent, Some(ParentOp::TopPrec | ParentOp::Unary));
+            }
+            Expr::UnOp { .. } | Expr::New { .. } => {
+                break matches!(cur_parent, Some(ParentOp::TopPrec));
+            }
+            Expr::BinOp { lhs, op, rhs } => {
+                if cur_parent.is_some_and(|parent| !parent.can_assoc(*op)) {
+                    break true;
+                }
+                cur = (**lhs).as_val();
+                cur_parent = Some(ParentOp::BinaryLhs(*op));
+                chain.push(Chain::Op(*op, (**rhs).as_val()));
+                chain_ops += 1;
+            }
+            // break the chain if we're chaining operators and we encounter a non-operator
+            _ if chain_ops > 0 => {
+                break false;
+            }
             Expr::Member { expr, member } => {
                 cur = (**expr).as_val();
                 cur_parent = Some(ParentOp::TopPrec);
@@ -730,24 +748,6 @@ fn format_chain<K: AstKind>(
                     break false;
                 }
             }
-            Expr::BinOp { lhs, op, rhs } => {
-                if cur_parent.is_some_and(|parent| !parent.can_assoc(*op)) {
-                    break true;
-                }
-                cur = (**lhs).as_val();
-                cur_parent = Some(ParentOp::BinaryLhs(*op));
-                chain.push(Chain::Op(*op, (**rhs).as_val()));
-                chain_ops += 1;
-            }
-            Expr::Conditional { .. } => {
-                break cur_parent.is_some();
-            }
-            Expr::DynCast { .. } => {
-                break matches!(cur_parent, Some(ParentOp::TopPrec | ParentOp::Unary));
-            }
-            Expr::UnOp { .. } | Expr::New { .. } => {
-                break matches!(cur_parent, Some(ParentOp::TopPrec));
-            }
             _ => break false,
         };
     };
@@ -758,11 +758,14 @@ fn format_chain<K: AstKind>(
         write!(f, "{}", cur.as_fmt(ctx))?;
     }
 
-    let ctx = ctx.bump(1);
-    let break_line = chain_fields > usize::from(ctx.settings.max_chain_fields)
+    let width = chain.iter().map(Chain::approx_width).sum::<u16>();
+    let break_line = ctx.current_indent() + width > ctx.settings.max_width
+        || chain_fields > usize::from(ctx.settings.max_chain_fields)
         || chain_calls > usize::from(ctx.settings.max_chain_calls)
         || chain_ops > usize::from(ctx.settings.max_chain_operators)
         || chain.len() > usize::from(ctx.settings.max_chain_total);
+
+    let ctx = ctx.bump(1);
 
     for i in chain.into_iter().rev() {
         match i {
@@ -896,6 +899,187 @@ impl ParentOp {
             ParentOp::BinaryRhs(parent) => {
                 parent.precedence() == op.precedence() && parent.assoc() == Assoc::Right
             }
+        }
+    }
+}
+
+trait ApproxWidth {
+    fn approx_width(&self) -> u16;
+}
+
+impl<K> ApproxWidth for Expr<'_, K>
+where
+    K: AstKind,
+{
+    fn approx_width(&self) -> u16 {
+        match self {
+            Expr::Ident(ident) => ident.len() as u16,
+            Expr::Constant(constant) => match constant {
+                Constant::String(s) => s.len() as u16 + 2,
+                Constant::CName(s) => s.len() as u16 + 3,
+                Constant::Resource(r) => r.len() as u16 + 3,
+                Constant::TweakDbId(t) => t.len() as u16 + 3,
+                Constant::F32(f) => f.abs().log10().floor() as u16 + 1,
+                Constant::F64(f) => f.abs().log10().floor() as u16 + 1,
+                &Constant::I32(0) | &Constant::I64(0) | &Constant::U32(0) | &Constant::U64(0) => 1,
+                Constant::I32(i) => i.abs().ilog10() as u16 + 1,
+                Constant::I64(i) => i.abs().ilog10() as u16 + 1,
+                Constant::U32(u) => u.ilog10() as u16 + 1,
+                Constant::U64(u) => u.ilog10() as u16 + 1,
+                Constant::Bool(_) => 4,
+            },
+            Expr::ArrayLit(elems) => {
+                elems
+                    .iter()
+                    .map(|el| el.as_val().approx_width())
+                    .sum::<u16>()
+                    + 2
+            }
+            Expr::InterpolatedString(parts) => {
+                parts
+                    .iter()
+                    .map(|part| match part {
+                        StrPart::Expr(expr) => expr.as_val().approx_width() + 3,
+                        StrPart::Str(s) => s.len() as u16,
+                    })
+                    .sum::<u16>()
+                    + 3
+            }
+            Expr::Assign { lhs, rhs } => {
+                (**lhs).as_val().approx_width() + (**rhs).as_val().approx_width() + 3
+            }
+            Expr::BinOp { lhs, op, rhs } => {
+                (**lhs).as_val().approx_width()
+                    + (**rhs).as_val().approx_width()
+                    + op.approx_width()
+                    + 2
+            }
+            Expr::UnOp { expr, op } => (**expr).as_val().approx_width() + op.approx_width(),
+            Expr::Call {
+                expr,
+                args,
+                type_args,
+            } => {
+                (**expr).as_val().approx_width()
+                    + args
+                        .iter()
+                        .map(|arg| arg.as_val().approx_width() + 2)
+                        .sum::<u16>()
+                    + type_args
+                        .iter()
+                        .map(|arg| arg.as_val().approx_width() + 2)
+                        .sum::<u16>()
+                    + 2
+            }
+            Expr::Member { expr, member } => {
+                (**expr).as_val().approx_width() + member.len() as u16 + 1
+            }
+            Expr::Index { expr, index } => {
+                (**expr).as_val().approx_width() + (**index).as_val().approx_width() + 2
+            }
+            Expr::DynCast { expr, ty } => {
+                (**expr).as_val().approx_width() + (**ty).as_val().approx_width() + 4
+            }
+            Expr::New { ty, args } => {
+                (**ty).as_val().approx_width()
+                    + args
+                        .iter()
+                        .map(|arg| arg.as_val().approx_width() + 2)
+                        .sum::<u16>()
+                    + 6
+            }
+            Expr::Conditional { cond, then, else_ } => {
+                (**cond).as_val().approx_width()
+                    + (**then).as_val().approx_width()
+                    + (**else_).as_val().approx_width()
+                    + 7
+            }
+            Expr::This | Expr::Null => 4,
+            Expr::Super => 5,
+            Expr::Error => 0,
+        }
+    }
+}
+
+impl<K: AstKind> ApproxWidth for Param<'_, K> {
+    fn approx_width(&self) -> u16 {
+        self.name.len() as u16 + self.ty.as_val().approx_width() + 2
+    }
+}
+
+impl ApproxWidth for Type<'_> {
+    fn approx_width(&self) -> u16 {
+        match self {
+            Type::Named { name, args } if args.is_empty() => name.len() as u16,
+            Type::Named { name, args } => {
+                name.len() as u16
+                    + args
+                        .iter()
+                        .map(|arg| arg.as_val().approx_width() + 2)
+                        .sum::<u16>()
+                    + 2
+            }
+            Type::Array(el) => el.as_val().approx_width() + 2,
+            Type::StaticArray(el, size) => el.as_val().approx_width() + size.ilog10() as u16 + 4,
+        }
+    }
+}
+
+impl ApproxWidth for BinOp {
+    fn approx_width(&self) -> u16 {
+        match self {
+            BinOp::AssignAdd
+            | BinOp::AssignSub
+            | BinOp::AssignMul
+            | BinOp::AssignDiv
+            | BinOp::AssignBitOr
+            | BinOp::AssignBitAnd
+            | BinOp::Or
+            | BinOp::And
+            | BinOp::Eq
+            | BinOp::Ne
+            | BinOp::Le
+            | BinOp::Ge => 2,
+            BinOp::BitOr
+            | BinOp::BitXor
+            | BinOp::BitAnd
+            | BinOp::Lt
+            | BinOp::Gt
+            | BinOp::Add
+            | BinOp::Sub
+            | BinOp::Mul
+            | BinOp::Div
+            | BinOp::Mod => 1,
+        }
+    }
+}
+
+impl ApproxWidth for UnOp {
+    fn approx_width(&self) -> u16 {
+        match self {
+            UnOp::BitNot | UnOp::Not | UnOp::Neg => 1,
+        }
+    }
+}
+
+impl<K: AstKind> ApproxWidth for Chain<'_, '_, K> {
+    fn approx_width(&self) -> u16 {
+        match self {
+            Chain::Member(member) => member.len() as u16 + 1,
+            Chain::Call(member, type_args, args) => {
+                member.len() as u16
+                    + type_args
+                        .iter()
+                        .map(|arg| arg.as_val().approx_width() + 2)
+                        .sum::<u16>()
+                    + args
+                        .iter()
+                        .map(|arg| arg.as_val().approx_width() + 2)
+                        .sum::<u16>()
+                    + 2
+            }
+            Chain::Op(op, rhs) => op.approx_width() + rhs.as_val().approx_width() + 1,
+            Chain::Index(index) => index.as_val().approx_width() + 2,
         }
     }
 }

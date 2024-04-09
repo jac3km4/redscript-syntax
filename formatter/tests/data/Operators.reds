@@ -24,19 +24,20 @@ func Test2() {
 
 func Test3() {
   let test = new TestClass();
-  let allEqual = test
-    .GetPositionX()
+  let allEqual = test.GetPositionX()
     == test.GetPositionX()
     && test.GetPositionY() == test.GetPositionY()
     && test.GetPositionZ() == test.GetPositionZ()
     && test.GetPositionW() == test.GetPositionW();
-  let anyUnequal1 = test
-    .GetPositionX()
+  let anyUnequal1 = test.GetPositionX()
     != test.GetPositionX()
     || test.GetPositionY() != test.GetPositionY()
     || test.GetPositionZ() != test.GetPositionZ()
     || test.GetPositionW() != test.GetPositionW();
-  let anyUnequal2 = !(test.GetPositionX() == test.GetPositionX()) || !(test.GetPositionY() == test.GetPositionY()) || !(test.GetPositionZ() == test.GetPositionZ()) || !(test.GetPositionW() == test.GetPositionW());
+  let anyUnequal2 = !(test.GetPositionX() == test.GetPositionX())
+    || !(test.GetPositionY() == test.GetPositionY())
+    || !(test.GetPositionZ() == test.GetPositionZ())
+    || !(test.GetPositionW() == test.GetPositionW());
 }
 
 func Test4() {

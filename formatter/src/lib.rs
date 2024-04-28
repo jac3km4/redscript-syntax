@@ -928,13 +928,10 @@ where
                 Constant::U64(u) => u.ilog10() as u16 + 1,
                 Constant::Bool(_) => 4,
             },
-            Expr::ArrayLit(elems) => {
-                elems
-                    .iter()
-                    .map(|el| el.as_val().approx_width())
-                    .sum::<u16>()
-                    + 2
-            }
+            Expr::ArrayLit(elems) => elems
+                .iter()
+                .map(|el| el.as_val().approx_width() + 2)
+                .sum::<u16>(),
             Expr::InterpolatedString(parts) => {
                 parts
                     .iter()
@@ -969,7 +966,6 @@ where
                         .iter()
                         .map(|arg| arg.as_val().approx_width() + 2)
                         .sum::<u16>()
-                    + 2
             }
             Expr::Member { expr, member } => {
                 (**expr).as_val().approx_width() + member.len() as u16 + 1
@@ -986,7 +982,7 @@ where
                         .iter()
                         .map(|arg| arg.as_val().approx_width() + 2)
                         .sum::<u16>()
-                    + 6
+                    + 4
             }
             Expr::Conditional { cond, then, else_ } => {
                 (**cond).as_val().approx_width()
@@ -1017,7 +1013,6 @@ impl ApproxWidth for Type<'_> {
                         .iter()
                         .map(|arg| arg.as_val().approx_width() + 2)
                         .sum::<u16>()
-                    + 2
             }
             Type::Array(el) => el.as_val().approx_width() + 2,
             Type::StaticArray(el, size) => el.as_val().approx_width() + size.ilog10() as u16 + 4,

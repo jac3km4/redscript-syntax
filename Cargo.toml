@@ -14,7 +14,7 @@ derive-where = "1"
 argh = "0.1"
 pretty_dtoa = "0.3"
 pretty_assertions = "1"
-chumsky = { version = "1.0.0-alpha.6", features = ["label"] }
+chumsky = { version = "1.0.0-alpha.7", features = ["label"] }
 
 [workspace.lints.rust]
 warnings = "deny"

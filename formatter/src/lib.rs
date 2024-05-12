@@ -4,7 +4,7 @@ use pretty_dtoa::{dtoa, ftoa, FmtFloatConfig};
 use redscript_ast::{
     Aggregate, Annotation, Assoc, AstKind, BinOp, Block, Constant, Enum, EnumVariant, Expr, Field,
     Function, FunctionBody, Import, Item, ItemDecl, ItemQualifiers, Module, Param, ParamQualifiers,
-    Path, Stmt, StrPart, Type, UnOp, Visibility, Wrapper,
+    Path, Stmt, StrPart, Type, TypeParam, UnOp, Variance, Visibility, Wrapper,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -151,6 +151,13 @@ impl Formattable for Import<'_> {
 impl<K: AstKind> Formattable for Aggregate<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         write!(f, "{}", self.name)?;
+        if !self.type_params.is_empty() {
+            write!(
+                f,
+                "<{}>",
+                SepBy(self.type_params.iter().map(Wrapper::as_val), ", ", ctx)
+            )?;
+        }
         if let Some(extends) = &self.extends {
             write!(f, " extends {}", (**extends).as_val().as_fmt(ctx))?;
         }
@@ -172,10 +179,17 @@ impl<K: AstKind> Formattable for Field<'_, K> {
 
 impl<K: AstKind> Formattable for Function<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
+        write!(f, "func {}", self.name)?;
+        if !self.type_params.is_empty() {
+            write!(
+                f,
+                "<{}>",
+                SepBy(self.type_params.iter().map(Wrapper::as_val), ", ", ctx)
+            )?;
+        }
         write!(
             f,
-            "func {}({}) ",
-            self.name,
+            "({}) ",
             SepByMultiline(self.params.iter().map(Wrapper::as_val), ", ", ctx)
         )?;
         if let Some(ty) = &self.return_ty {
@@ -579,6 +593,26 @@ impl Formattable for Visibility {
             Self::Public => write!(f, "public"),
             Self::Protected => write!(f, "protected"),
             Self::Private => write!(f, "private"),
+        }
+    }
+}
+
+impl<K: AstKind> Formattable for TypeParam<'_, K> {
+    fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
+        write!(f, "{}{}", self.variance.as_fmt(ctx), self.name)?;
+        if let Some(upper_bound) = &self.upper_bound {
+            write!(f, " extends {}", (**upper_bound).as_val().as_fmt(ctx))?;
+        }
+        Ok(())
+    }
+}
+
+impl Formattable for Variance {
+    fn format(&self, f: &mut fmt::Formatter<'_>, _ctx: FormatCtx<'_>) -> fmt::Result {
+        match self {
+            Self::Covariant => write!(f, "+"),
+            Self::Contravariant => write!(f, "-"),
+            Self::Invariant => Ok(()),
         }
     }
 }

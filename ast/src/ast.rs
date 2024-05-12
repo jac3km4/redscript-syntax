@@ -110,6 +110,7 @@ impl<'src, K: AstKind> Item<'src, K> {
 #[derive_where(Debug, PartialEq)]
 pub struct Aggregate<'src, K: AstKind = Identity> {
     pub name: &'src str,
+    pub type_params: Box<[TypeParam<'src, K>]>,
     pub extends: Option<Box<TypeT<'src, K>>>,
     pub items: Box<[ItemDeclT<'src, K>]>,
 }
@@ -117,11 +118,13 @@ pub struct Aggregate<'src, K: AstKind = Identity> {
 impl<'src, K: AstKind> Aggregate<'src, K> {
     pub fn new(
         name: &'src str,
+        type_params: impl Into<Box<[TypeParam<'src, K>]>>,
         extends: Option<Box<TypeT<'src, K>>>,
         items: impl Into<Box<[ItemDeclT<'src, K>]>>,
     ) -> Self {
         Self {
             name,
+            type_params: type_params.into(),
             extends,
             items: items.into(),
         }
@@ -130,6 +133,12 @@ impl<'src, K: AstKind> Aggregate<'src, K> {
     pub fn unwrapped(self) -> Aggregate<'src> {
         Aggregate {
             name: self.name,
+            type_params: self
+                .type_params
+                .into_vec()
+                .into_iter()
+                .map(|p| p.into_val().unwrapped())
+                .collect(),
             extends: self.extends.map(|ty| (*ty).into_val().into()),
             items: self
                 .items
@@ -169,6 +178,7 @@ impl<'src, K: AstKind> Field<'src, K> {
 #[derive_where(Debug, PartialEq)]
 pub struct Function<'src, K: AstKind = Identity> {
     pub name: &'src str,
+    pub type_params: Box<[TypeParam<'src, K>]>,
     pub params: Box<[ParamT<'src, K>]>,
     pub return_ty: Option<Box<TypeT<'src, K>>>,
     pub body: Option<FunctionBody<'src, K>>,
@@ -177,12 +187,14 @@ pub struct Function<'src, K: AstKind = Identity> {
 impl<'src, K: AstKind> Function<'src, K> {
     pub fn new(
         name: &'src str,
+        type_params: impl Into<Box<[TypeParam<'src, K>]>>,
         params: impl Into<Box<[ParamT<'src, K>]>>,
         return_ty: Option<Box<TypeT<'src, K>>>,
         body: Option<FunctionBody<'src, K>>,
     ) -> Self {
         Self {
             name,
+            type_params: type_params.into(),
             params: params.into(),
             return_ty,
             body,
@@ -194,6 +206,12 @@ impl<'src, K: AstKind> Function<'src, K> {
             name: self.name,
             params: self
                 .params
+                .into_vec()
+                .into_iter()
+                .map(|p| p.into_val().unwrapped())
+                .collect(),
+            type_params: self
+                .type_params
                 .into_vec()
                 .into_iter()
                 .map(|p| p.into_val().unwrapped())
@@ -299,6 +317,42 @@ impl<'src> Type<'src> {
             args: Box::new([]),
         }
     }
+}
+
+#[derive_where(Debug, PartialEq)]
+pub struct TypeParam<'src, K: AstKind = Identity> {
+    pub variance: Variance,
+    pub name: &'src str,
+    pub upper_bound: Option<Box<TypeT<'src, K>>>,
+}
+
+impl<'src, K: AstKind> TypeParam<'src, K> {
+    pub fn new(
+        variance: Variance,
+        name: &'src str,
+        upper_bound: Option<Box<TypeT<'src, K>>>,
+    ) -> Self {
+        Self {
+            variance,
+            name,
+            upper_bound,
+        }
+    }
+
+    pub fn unwrapped(self) -> TypeParam<'src> {
+        TypeParam {
+            variance: self.variance,
+            name: self.name,
+            upper_bound: self.upper_bound.map(|ty| (*ty).into_val().into()),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Variance {
+    Covariant,
+    Contravariant,
+    Invariant,
 }
 
 #[derive_where(Debug, PartialEq)]
@@ -834,6 +888,6 @@ mod tests {
     fn sizes() {
         assert_eq!(mem::size_of::<Expr<'_>>(), 48);
         assert_eq!(mem::size_of::<Stmt<'_>>(), 48);
-        assert_eq!(mem::size_of::<Item<'_>>(), 64);
+        assert_eq!(mem::size_of::<Item<'_>>(), 80);
     }
 }

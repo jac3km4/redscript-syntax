@@ -6,7 +6,8 @@ use ast::WithSpan;
 pub use ast::{
     Aggregate, Annotation, Assoc, AstKind, BinOp, Block, Case, ConditionalBlock, Constant, Enum,
     EnumVariant, Expr, Field, Function, FunctionBody, Import, Item, ItemDecl, ItemQualifiers,
-    Module, Param, ParamQualifiers, Path, Stmt, StrPart, Type, UnOp, Visibility, Wrapper,
+    Module, Param, ParamQualifiers, Path, Stmt, StrPart, Type, TypeParam, UnOp, Variance,
+    Visibility, Wrapper,
 };
 pub use files::{File, SourceMap};
 pub use span::{FileId, Span};
@@ -26,3 +27,4 @@ pub type SpannedItemDecl<'src> = ItemDecl<'src, WithSpan>;
 pub type SpannedModule<'src> = Module<'src, WithSpan>;
 pub type SpannedParam<'src> = Param<'src, WithSpan>;
 pub type SpannedStmt<'src> = Stmt<'src, WithSpan>;
+pub type SpannedTypeParam<'src> = TypeParam<'src, WithSpan>;

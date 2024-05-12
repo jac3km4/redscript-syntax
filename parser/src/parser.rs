@@ -9,7 +9,7 @@ pub use expr::expr;
 pub use item::{item, item_decl};
 use redscript_ast::{
     Block, Expr, FileId, Module, Path, Span, Spanned, SpannedBlock, SpannedModule, SpannedStmt,
-    Stmt, Type,
+    SpannedTypeParam, Stmt, Type, TypeParam, Variance,
 };
 pub use stmt::stmt;
 
@@ -117,6 +117,36 @@ fn type_<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Type<'src>> {
     })
 }
 
+fn type_param<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedTypeParam<'src>> {
+    let variance = select! {
+        Token::Plus => Variance::Covariant,
+        Token::Minus => Variance::Contravariant,
+    };
+
+    variance
+        .or_not()
+        .then(ident())
+        .then(
+            just(Token::Ident("extends"))
+                .ignore_then(type_with_span())
+                .or_not(),
+        )
+        .map(|((variance, name), extends)| {
+            TypeParam::new(
+                variance.unwrap_or(Variance::Invariant),
+                name,
+                extends.map(Box::new),
+            )
+        })
+}
+
+fn type_params<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Vec<SpannedTypeParam<'src>>> {
+    type_param()
+        .separated_by(just(Token::Comma))
+        .collect::<Vec<_>>()
+        .delimited_by(just(Token::LAngle), just(Token::RAngle))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,13 +225,13 @@ mod tests {
                         [],
                         Some(Visibility::Public),
                         ItemQualifiers::STATIC,
-                        Item::Function(Function::new("Dummy", [], None, None))
+                        Item::Function(Function::new("Dummy", [], [], None, None))
                     ),
                     ItemDecl::new(
                         [],
                         None,
                         ItemQualifiers::NATIVE,
-                        Item::Struct(Aggregate::new("Test", None, []))
+                        Item::Struct(Aggregate::new("Test", [], None, []))
                     ),
                     ItemDecl::new(
                         [],
@@ -209,6 +239,7 @@ mod tests {
                         ItemQualifiers::empty(),
                         Item::Function(Function::new(
                             "Inline",
+                            [],
                             [],
                             Some(Type::plain("Int32").into()),
                             Some(FunctionBody::Inline(

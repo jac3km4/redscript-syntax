@@ -13,11 +13,11 @@ private native class NativeClass extends IScriptable {
   }
 }
 
-public class ScriptedClas {
+public class ScriptedClass {
   let field: String = "Hello, World!";
 
-  public static func New() -> ref<ScriptedClas> {
-    return new ScriptedClas();
+  public static func New() -> ref<ScriptedClass> {
+    return new ScriptedClass();
   }
 
   func ScriptedMethod() -> Int32 {
@@ -25,6 +25,11 @@ public class ScriptedClas {
   }
 
   func InlineMethod() -> Int32 = 2;
+}
+
+public class GenericClass<+A extends ScriptedClass> {
+  public func GenericMethod<B>() {
+  }
 }
 
 struct Struct {

@@ -8,7 +8,7 @@ use redscript_ast::{
     SpannedExpr, SpannedField, SpannedFunction, SpannedItem, SpannedItemDecl, Visibility,
 };
 
-use super::{block, expr::expr_with_span, ident, type_with_span, Parse};
+use super::{block, expr::expr_with_span, ident, type_params, type_with_span, Parse};
 
 #[inline]
 pub fn item_decl<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedItemDecl<'src>> {
@@ -82,12 +82,19 @@ fn function<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedFunction<'src>>
 
     just(Token::Ident("func"))
         .ignore_then(ident())
+        .then(type_params().or_not())
         .then(params)
         .then(just(Token::Arrow).ignore_then(ty).or_not())
         .then(function_body.or_not())
         .then_ignore(just(Token::Semicolon).or_not())
-        .map(|(((name, params), ret_ty), body)| {
-            Function::new(name, params, ret_ty.map(Box::new), body)
+        .map(|((((name, type_params), params), ret_ty), body)| {
+            Function::new(
+                name,
+                type_params.unwrap_or_default(),
+                params,
+                ret_ty.map(Box::new),
+                body,
+            )
         })
 }
 
@@ -134,6 +141,7 @@ fn aggregate<'tok, 'src: 'tok>(
 
     is_struct
         .then(ident())
+        .then(type_params().or_not())
         .then(
             just(Token::Ident("extends"))
                 .ignore_then(type_with_span())
@@ -141,8 +149,13 @@ fn aggregate<'tok, 'src: 'tok>(
         )
         .then(items)
         .then_ignore(just(Token::Semicolon).or_not())
-        .map(|(((is_struct, name), extends), items)| {
-            let aggregate = Aggregate::new(name, extends.map(Box::new), items);
+        .map(|((((is_struct, name), type_params), extends), items)| {
+            let aggregate = Aggregate::new(
+                name,
+                type_params.unwrap_or_default(),
+                extends.map(Box::new),
+                items,
+            );
             if is_struct {
                 Item::Struct(aggregate)
             } else {
@@ -241,7 +254,9 @@ mod tests {
     use crate::{parse_item, parse_item_decl};
 
     use pretty_assertions::assert_eq;
-    use redscript_ast::{Block, Constant, Expr, FileId, FunctionBody, Stmt, Type};
+    use redscript_ast::{
+        Block, Constant, Expr, FileId, FunctionBody, Stmt, Type, TypeParam, Variance,
+    };
 
     #[test]
     fn class() {
@@ -257,25 +272,25 @@ mod tests {
             parse_item(code, FileId::from_u32(0)).0.unwrap().unwrapped(),
             Item::Class(Aggregate::new(
                 "Test",
+                [],
                 None,
                 [ItemDecl::new(
                     [],
                     Some(Visibility::Public),
                     ItemQualifiers::FINAL,
-                    Item::Function(
-                        Function::new(
-                            "Method",
-                            [Param::new(
-                                "arg",
-                                Type::plain("Int32"),
-                                ParamQualifiers::OPTIONAL
-                            )],
-                            Some(Type::plain("Int32").into()),
-                            Some(FunctionBody::Block(Block::single(Stmt::Return(Some(
-                                Expr::Ident("arg").into()
-                            )))))
-                        )
-                    )
+                    Item::Function(Function::new(
+                        "Method",
+                        [],
+                        [Param::new(
+                            "arg",
+                            Type::plain("Int32"),
+                            ParamQualifiers::OPTIONAL
+                        )],
+                        Some(Type::plain("Int32").into()),
+                        Some(FunctionBody::Block(Block::single(Stmt::Return(Some(
+                            Expr::Ident("arg").into()
+                        )))))
+                    ))
                 )]
             ))
         );
@@ -317,6 +332,7 @@ mod tests {
             parse_item(code, FileId::from_u32(0)).0.unwrap().unwrapped(),
             Item::Struct(Aggregate::new(
                 "Test",
+                [],
                 None,
                 [
                     ItemDecl::new(
@@ -350,19 +366,18 @@ mod tests {
 
         assert_eq!(
             parse_item(code, FileId::from_u32(0)).0.unwrap().unwrapped(),
-            Item::Function(
-                Function::new(
-                    "Test",
-                    [
-                        Param::new("arg1", Type::plain("Int32"), ParamQualifiers::empty()),
-                        Param::new("arg2", Type::plain("Int64"), ParamQualifiers::empty()),
-                    ],
-                    Some(Type::plain("Int32").into()),
-                    Some(FunctionBody::Block(Block::single(Stmt::Return(Some(
-                        Expr::Ident("arg1").into()
-                    )))))
-                )
-            )
+            Item::Function(Function::new(
+                "Test",
+                [],
+                [
+                    Param::new("arg1", Type::plain("Int32"), ParamQualifiers::empty()),
+                    Param::new("arg2", Type::plain("Int64"), ParamQualifiers::empty()),
+                ],
+                Some(Type::plain("Int32").into()),
+                Some(FunctionBody::Block(Block::single(Stmt::Return(Some(
+                    Expr::Ident("arg1").into()
+                )))))
+            ))
         );
     }
 
@@ -386,8 +401,53 @@ mod tests {
                 ],
                 None,
                 ItemQualifiers::empty(),
-                Item::Function(Function::new("Test", [], None, None))
+                Item::Function(Function::new("Test", [], [], None, None))
             )
+        );
+    }
+
+    #[test]
+    fn class_with_type_params() {
+        let code = r#"
+        class Test<-A, +B extends C> {
+            public final func Method<D extends E>(opt arg: Int32) -> Int32 {
+                return arg;
+            }
+        }
+        "#;
+
+        assert_eq!(
+            parse_item(code, FileId::from_u32(0)).0.unwrap().unwrapped(),
+            Item::Class(Aggregate::new(
+                "Test",
+                [
+                    TypeParam::new(Variance::Contravariant, "A", None),
+                    TypeParam::new(Variance::Covariant, "B", Some(Type::plain("C").into()))
+                ],
+                None,
+                [ItemDecl::new(
+                    [],
+                    Some(Visibility::Public),
+                    ItemQualifiers::FINAL,
+                    Item::Function(Function::new(
+                        "Method",
+                        [TypeParam::new(
+                            Variance::Invariant,
+                            "D",
+                            Some(Type::plain("E").into())
+                        )],
+                        [Param::new(
+                            "arg",
+                            Type::plain("Int32"),
+                            ParamQualifiers::OPTIONAL
+                        )],
+                        Some(Type::plain("Int32").into()),
+                        Some(FunctionBody::Block(Block::single(Stmt::Return(Some(
+                            Expr::Ident("arg").into()
+                        )))))
+                    ))
+                )]
+            ))
         );
     }
 }

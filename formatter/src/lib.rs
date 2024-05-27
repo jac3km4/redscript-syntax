@@ -452,10 +452,35 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                     write!(f, "{} ? {} : {}", cond, then, else_)
                 }
             }
+            Expr::Lambda { params, body } => {
+                let parenthesize = ctx.parent.is_some();
+                let ctx = ctx.without_parent_op();
+                let params = params.iter().map(|param| param.as_val().name);
+
+                if parenthesize {
+                    write!(
+                        f,
+                        "(({}) -> {})",
+                        SepBy(params, ", ", ctx),
+                        body.as_fmt(ctx)
+                    )
+                } else {
+                    write!(f, "({}) -> {}", SepBy(params, ", ", ctx), body.as_fmt(ctx))
+                }
+            }
             Expr::This => write!(f, "this"),
             Expr::Super => write!(f, "super"),
             Expr::Null => write!(f, "null"),
             Expr::Error => Ok(()),
+        }
+    }
+}
+
+impl<K: AstKind> Formattable for FunctionBody<'_, K> {
+    fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
+        match self {
+            FunctionBody::Block(block) => write!(f, "{}", block.as_fmt(ctx)),
+            FunctionBody::Inline(expr) => write!(f, "{}", (**expr).as_val().as_fmt(ctx)),
         }
     }
 }
@@ -471,7 +496,11 @@ impl<K: AstKind> Formattable for Param<'_, K> {
         if self.qualifiers.contains(ParamQualifiers::CONST) {
             write!(f, "const ")?;
         };
-        write!(f, "{}: {}", self.name, self.ty.as_val().as_fmt(ctx))
+        if let Some(ty) = &self.ty {
+            write!(f, "{}: {}", self.name, ty.as_val().as_fmt(ctx))
+        } else {
+            write!(f, "{}", self.name)
+        }
     }
 }
 
@@ -1024,6 +1053,14 @@ where
                     + (**else_).as_val().approx_width()
                     + 7
             }
+            Expr::Lambda { params, body } => {
+                params
+                    .iter()
+                    .map(|param| param.as_val().name.len() as u16 + 2)
+                    .sum::<u16>()
+                    + body.approx_width()
+                    + 4
+            }
             Expr::This | Expr::Null => 4,
             Expr::Super => 5,
             Expr::Error => 0,
@@ -1031,9 +1068,27 @@ where
     }
 }
 
+impl<K: AstKind> ApproxWidth for FunctionBody<'_, K> {
+    fn approx_width(&self) -> u16 {
+        match self {
+            FunctionBody::Block(block) => {
+                // TODO: come up with something better
+                block.stmts.len() as u16 * 10 + 4
+            }
+            FunctionBody::Inline(expr) => (**expr).as_val().approx_width(),
+        }
+    }
+}
+
 impl<K: AstKind> ApproxWidth for Param<'_, K> {
     fn approx_width(&self) -> u16 {
-        self.name.len() as u16 + self.ty.as_val().approx_width() + 2
+        self.name.len() as u16
+            + self
+                .ty
+                .as_ref()
+                .map(|ty| ty.as_val().approx_width())
+                .unwrap_or_default()
+            + 2
     }
 }
 

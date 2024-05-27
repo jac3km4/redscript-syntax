@@ -358,12 +358,12 @@ pub enum Variance {
 #[derive_where(Debug, PartialEq)]
 pub struct Param<'src, K: AstKind = Identity> {
     pub name: &'src str,
-    pub ty: TypeT<'src, K>,
+    pub ty: Option<TypeT<'src, K>>,
     pub qualifiers: ParamQualifiers,
 }
 
 impl<'src, K: AstKind> Param<'src, K> {
-    pub fn new(name: &'src str, ty: TypeT<'src, K>, qualifiers: ParamQualifiers) -> Self {
+    pub fn new(name: &'src str, ty: Option<TypeT<'src, K>>, qualifiers: ParamQualifiers) -> Self {
         Self {
             name,
             ty,
@@ -374,7 +374,7 @@ impl<'src, K: AstKind> Param<'src, K> {
     pub fn unwrapped(self) -> Param<'src> {
         Param {
             name: self.name,
-            ty: self.ty.into_val(),
+            ty: self.ty.map(Wrapper::into_val),
             qualifiers: self.qualifiers,
         }
     }
@@ -588,6 +588,10 @@ pub enum Expr<'src, K: AstKind = Identity> {
         then: Box<ExprT<'src, K>>,
         else_: Box<ExprT<'src, K>>,
     },
+    Lambda {
+        params: Box<[ParamT<'src, K>]>,
+        body: FunctionBody<'src, K>,
+    },
     This,
     Super,
     Null,
@@ -667,6 +671,14 @@ impl<'src, K: AstKind> Expr<'src, K> {
                 cond: (*cond).into_val().unwrapped().into(),
                 then: (*then).into_val().unwrapped().into(),
                 else_: (*else_).into_val().unwrapped().into(),
+            },
+            Expr::Lambda { params, body } => Expr::Lambda {
+                params: params
+                    .into_vec()
+                    .into_iter()
+                    .map(|p| p.into_val().unwrapped())
+                    .collect(),
+                body: body.into_val().unwrapped(),
             },
             Expr::This => Expr::This,
             Expr::Super => Expr::Super,

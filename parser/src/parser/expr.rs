@@ -2,17 +2,18 @@ use std::iter;
 
 use crate::{lexer::Token, parser_input};
 use chumsky::prelude::*;
-use redscript_ast::{Assoc, BinOp, Constant, Expr, Span, SpannedExpr, StrPart, Type, UnOp};
+use redscript_ast::{
+    Assoc, BinOp, Constant, Expr, FunctionBody, Param, Span, SpannedBlock, SpannedExpr, StrPart,
+    Type, UnOp,
+};
 
 use super::{ident, type_with_span, Parse};
 
-#[inline]
-pub fn expr<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedExpr<'src>> {
-    expr_with_span().map(|(expr, _)| expr)
-}
-
-pub fn expr_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)> {
-    inner_expr_with_span()
+pub fn expr_with_span_rec<'tok, 'src: 'tok>(
+    expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
+    block: impl Parse<'tok, 'src, SpannedBlock<'src>>,
+) -> impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)> {
+    expr_with_span_internal(expr, block)
         // handle trailing period explicitly because it's a common error
         .then(just(Token::Period).or_not())
         .validate(|(exp, period), ctx, errs| {
@@ -23,217 +24,236 @@ pub fn expr_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, (SpannedExpr
         })
 }
 
-pub fn inner_expr_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>
-{
-    recursive(|this| {
-        let value = select! {
-            Token::Null => Expr::Null,
-            Token::This => Expr::This,
-            Token::Super => Expr::Super,
-            Token::True => Expr::Constant(Constant::Bool(true)),
-            Token::False => Expr::Constant(Constant::Bool(false)),
-            Token::Int(s) => Expr::Constant(Constant::I32(s)),
-            Token::Uint(s) => Expr::Constant(Constant::U32(s)),
-            Token::Ulong(s) => Expr::Constant(Constant::U64(s)),
-            Token::Long(s) => Expr::Constant(Constant::I64(s)),
-            Token::Float(s) => Expr::Constant(Constant::F32(s)),
-            Token::Double(s) => Expr::Constant(Constant::F64(s)),
-            Token::Str(s) => Expr::Constant(Constant::String(s)),
-            Token::CName(s) => Expr::Constant(Constant::CName(s)),
-            Token::ResRef(s) => Expr::Constant(Constant::Resource(s)),
-            Token::TdbId(s) => Expr::Constant(Constant::TweakDbId(s)),
-        }
-        .labelled("value");
+fn expr_with_span_internal<'tok, 'src: 'tok>(
+    expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
+    block: impl Parse<'tok, 'src, SpannedBlock<'src>>,
+) -> impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)> {
+    let value = select! {
+        Token::Null => Expr::Null,
+        Token::This => Expr::This,
+        Token::Super => Expr::Super,
+        Token::True => Expr::Constant(Constant::Bool(true)),
+        Token::False => Expr::Constant(Constant::Bool(false)),
+        Token::Int(s) => Expr::Constant(Constant::I32(s)),
+        Token::Uint(s) => Expr::Constant(Constant::U32(s)),
+        Token::Ulong(s) => Expr::Constant(Constant::U64(s)),
+        Token::Long(s) => Expr::Constant(Constant::I64(s)),
+        Token::Float(s) => Expr::Constant(Constant::F32(s)),
+        Token::Double(s) => Expr::Constant(Constant::F64(s)),
+        Token::Str(s) => Expr::Constant(Constant::String(s)),
+        Token::CName(s) => Expr::Constant(Constant::CName(s)),
+        Token::ResRef(s) => Expr::Constant(Constant::Resource(s)),
+        Token::TdbId(s) => Expr::Constant(Constant::TweakDbId(s)),
+    }
+    .labelled("value");
 
-        let unop = select! {
-            Token::Minus => UnOp::Neg,
-            Token::Not => UnOp::Not,
-            Token::BitNot => UnOp::BitNot,
-        }
-        .labelled("unary operator");
+    let unop = select! {
+        Token::Minus => UnOp::Neg,
+        Token::Not => UnOp::Not,
+        Token::BitNot => UnOp::BitNot,
+    }
+    .labelled("unary operator");
 
-        let binop = select! {
-            Token::AssignAdd => BinOp::AssignAdd,
-            Token::AssignSub => BinOp::AssignSub,
-            Token::AssignMul => BinOp::AssignMul,
-            Token::AssignDiv => BinOp::AssignDiv,
-            Token::AssignBitOr => BinOp::AssignBitOr,
-            Token::AssignBitAnd => BinOp::AssignBitAnd,
-            Token::Plus => BinOp::Add,
-            Token::Minus => BinOp::Sub,
-            Token::Star => BinOp::Mul,
-            Token::Slash => BinOp::Div,
-            Token::Percent => BinOp::Mod,
-            Token::Eq => BinOp::Eq,
-            Token::Ne => BinOp::Ne,
-            Token::LAngle => BinOp::Lt,
-            Token::Le => BinOp::Le,
-            Token::RAngle => BinOp::Gt,
-            Token::Ge => BinOp::Ge,
-            Token::And => BinOp::And,
-            Token::Or => BinOp::Or,
-            Token::BitAnd => BinOp::BitAnd,
-            Token::BitOr => BinOp::BitOr,
-            Token::BitXor => BinOp::BitXor,
-        }
-        .labelled("binary operator");
+    let binop = select! {
+        Token::AssignAdd => BinOp::AssignAdd,
+        Token::AssignSub => BinOp::AssignSub,
+        Token::AssignMul => BinOp::AssignMul,
+        Token::AssignDiv => BinOp::AssignDiv,
+        Token::AssignBitOr => BinOp::AssignBitOr,
+        Token::AssignBitAnd => BinOp::AssignBitAnd,
+        Token::Plus => BinOp::Add,
+        Token::Minus => BinOp::Sub,
+        Token::Star => BinOp::Mul,
+        Token::Slash => BinOp::Div,
+        Token::Percent => BinOp::Mod,
+        Token::Eq => BinOp::Eq,
+        Token::Ne => BinOp::Ne,
+        Token::LAngle => BinOp::Lt,
+        Token::Le => BinOp::Le,
+        Token::RAngle => BinOp::Gt,
+        Token::Ge => BinOp::Ge,
+        Token::And => BinOp::And,
+        Token::Or => BinOp::Or,
+        Token::BitAnd => BinOp::BitAnd,
+        Token::BitOr => BinOp::BitOr,
+        Token::BitXor => BinOp::BitXor,
+    }
+    .labelled("binary operator");
 
-        let interp_str = this
-            .clone()
-            .nested_in(select_ref! { Token::Group(tok) = ex => parser_input(tok, *ex.ctx()) })
-            .map(StrPart::Expr)
-            .or(select! { Token::StrFrag(str) => StrPart::Str(str) })
-            .repeated()
-            .collect::<Vec<_>>()
-            .nested_in(select_ref! { Token::InterpStr(tok) = ex => parser_input(tok, *ex.ctx()) })
-            .map(|parts| Expr::InterpolatedString(parts.into()));
+    let interp_str = expr
+        .clone()
+        .nested_in(select_ref! { Token::Group(tok) = ex => parser_input(tok, *ex.ctx()) })
+        .map(StrPart::Expr)
+        .or(select! { Token::StrFrag(str) => StrPart::Str(str) })
+        .repeated()
+        .collect::<Vec<_>>()
+        .nested_in(select_ref! { Token::InterpStr(tok) = ex => parser_input(tok, *ex.ctx()) })
+        .map(|parts| Expr::InterpolatedString(parts.into()));
 
-        let ident = ident();
-        let ty = type_with_span();
+    let ident = ident();
+    let ty = type_with_span();
 
-        let arguments = this
-            .clone()
-            .separated_by(just(Token::Comma))
-            .allow_trailing()
-            .collect::<Vec<_>>()
-            .delimited_by(just(Token::LParen), just(Token::RParen));
-        let type_arguments = ty
-            .clone()
-            .separated_by(just(Token::Comma))
-            .allow_trailing()
-            .collect::<Vec<_>>()
-            .delimited_by(just(Token::LAngle), just(Token::RAngle));
+    let arguments = expr
+        .clone()
+        .separated_by(just(Token::Comma))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(just(Token::LParen), just(Token::RParen));
+    let type_arguments = ty
+        .clone()
+        .separated_by(just(Token::Comma))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(just(Token::LAngle), just(Token::RAngle));
 
-        let new = just(Token::Ident("new"))
-            .ignore_then(ty.clone())
-            .then(arguments.clone())
-            .map(|(ty, args)| Expr::New {
-                ty: ty.into(),
-                args: args.into(),
-            });
+    let new = just(Token::Ident("new"))
+        .ignore_then(ty.clone())
+        .then(arguments.clone())
+        .map(|(ty, args)| Expr::New {
+            ty: ty.into(),
+            args: args.into(),
+        });
 
-        let array = this
-            .clone()
-            .separated_by(just(Token::Comma))
-            .allow_trailing()
-            .collect::<Vec<_>>()
-            .delimited_by(just(Token::LBracket), just(Token::RBracket))
-            .map(|els| Expr::ArrayLit(els.into()));
+    let array = expr
+        .clone()
+        .separated_by(just(Token::Comma))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(just(Token::LBracket), just(Token::RBracket))
+        .map(|els| Expr::ArrayLit(els.into()));
 
-        let parens = this
-            .clone()
-            .delimited_by(just(Token::LParen), just(Token::RParen));
+    let lambda = ident
+        .clone()
+        .then(just(Token::Colon).ignore_then(ty.clone()).or_not())
+        .map_with(|(name, ty), e| (Param::new(name, ty, Default::default()), e.span()))
+        .separated_by(just(Token::Comma))
+        .allow_trailing()
+        .collect::<Vec<_>>()
+        .delimited_by(just(Token::LParen), just(Token::RParen))
+        .then_ignore(just(Token::Arrow))
+        .then(
+            block
+                .clone()
+                .map(FunctionBody::Block)
+                .or(expr.clone().map(|e| FunctionBody::Inline(Box::new(e)))),
+        )
+        .map(|(params, body)| Expr::Lambda {
+            params: params.into(),
+            body,
+        });
 
-        let atom = choice((
-            array,
-            value,
-            interp_str,
-            new,
-            ident.clone().map(Expr::Ident),
-        ))
-        .map_with(|ex, e| (ex, e.span()))
-        .or(parens)
+    let parens = expr
+        .clone()
+        .delimited_by(just(Token::LParen), just(Token::RParen));
+
+    let atom = choice((
+        array,
+        value,
+        interp_str,
+        new,
+        ident.clone().map(Expr::Ident),
+        lambda,
+    ))
+    .map_with(|ex, e| (ex, e.span()))
+    .or(parens)
+    .recover_with(via_parser(nested_delimiters(
+        Token::LParen,
+        Token::RParen,
+        [
+            (Token::LBracket, Token::RBracket),
+            (Token::LBrace, Token::RBrace),
+        ],
+        |span| (Expr::Error, span),
+    )));
+
+    let member_access = just(Token::Period)
+        .ignore_then(ident)
+        .map(TopPrecedence::MemberAccess);
+    let array_access = expr
+        .clone()
+        .delimited_by(just(Token::LBracket), just(Token::RBracket))
+        .map(|args| TopPrecedence::ArrayAccess(args.into()));
+    let call = type_arguments
+        .or_not()
+        .then(arguments)
+        .map(|(targs, args)| TopPrecedence::Call(targs.unwrap_or_default().into(), args.into()));
+    let member = atom
+        .foldl_with(
+            choice((member_access, array_access, call)).repeated(),
+            |expr, member, e| {
+                let expr = Box::new(expr);
+                let res = match member {
+                    TopPrecedence::MemberAccess(member) => Expr::Member { expr, member },
+                    TopPrecedence::ArrayAccess(index) => Expr::Index { expr, index },
+                    TopPrecedence::Call(type_args, args) => Expr::Call {
+                        expr,
+                        type_args,
+                        args,
+                    },
+                };
+                (res, e.span())
+            },
+        )
         .recover_with(via_parser(nested_delimiters(
-            Token::LParen,
-            Token::RParen,
+            Token::LBracket,
+            Token::RBracket,
             [
-                (Token::LBracket, Token::RBracket),
+                (Token::LParen, Token::RParen),
                 (Token::LBrace, Token::RBrace),
             ],
             |span| (Expr::Error, span),
         )));
 
-        let member_access = just(Token::Period)
-            .ignore_then(ident)
-            .map(TopPrecedence::MemberAccess);
-        let array_access = this
-            .clone()
-            .delimited_by(just(Token::LBracket), just(Token::RBracket))
-            .map(|args| TopPrecedence::ArrayAccess(args.into()));
-        let call = type_arguments
-            .or_not()
-            .then(arguments)
-            .map(|(targs, args)| {
-                TopPrecedence::Call(targs.unwrap_or_default().into(), args.into())
-            });
-        let member = atom
-            .foldl_with(
-                choice((member_access, array_access, call)).repeated(),
-                |expr, member, e| {
-                    let expr = Box::new(expr);
-                    let res = match member {
-                        TopPrecedence::MemberAccess(member) => Expr::Member { expr, member },
-                        TopPrecedence::ArrayAccess(index) => Expr::Index { expr, index },
-                        TopPrecedence::Call(type_args, args) => Expr::Call {
-                            expr,
-                            type_args,
-                            args,
-                        },
-                    };
-                    (res, e.span())
-                },
-            )
-            .recover_with(via_parser(nested_delimiters(
-                Token::LBracket,
-                Token::RBracket,
-                [
-                    (Token::LParen, Token::RParen),
-                    (Token::LBrace, Token::RBrace),
-                ],
-                |span| (Expr::Error, span),
-            )));
+    let unops = unop.repeated().foldr_with(member, |op, expr, e| {
+        let expr = Box::new(expr);
+        (Expr::UnOp { op, expr }, e.span())
+    });
 
-        let unops = unop.repeated().foldr_with(member, |op, expr, e| {
+    let as_ = unops.foldl_with(
+        just(Token::Ident("as")).ignore_then(ty).repeated(),
+        |expr, ty, e| {
             let expr = Box::new(expr);
-            (Expr::UnOp { op, expr }, e.span())
+            let ty = Box::new(ty);
+            (Expr::DynCast { expr, ty }, e.span())
+        },
+    );
+
+    let binops = as_
+        .clone()
+        .then(binop.then(as_).repeated().collect::<Vec<_>>())
+        .map(|(lhs, ops)| climb_prec(lhs, &mut ops.into_iter().peekable(), 0));
+
+    let ternary = binops
+        .then(
+            just(Token::Question)
+                .ignore_then(expr.clone())
+                .then_ignore(just(Token::Colon))
+                .then(expr)
+                .or_not(),
+        )
+        .map_with(|(cond, tern), e| match tern {
+            Some((then, els)) => {
+                let cond = Box::new(cond);
+                let then = Box::new(then);
+                let else_ = Box::new(els);
+                (Expr::Conditional { cond, then, else_ }, e.span())
+            }
+            None => cond,
         });
 
-        let as_ = unops.foldl_with(
-            just(Token::Ident("as")).ignore_then(ty).repeated(),
-            |expr, ty, e| {
-                let expr = Box::new(expr);
-                let ty = Box::new(ty);
-                (Expr::DynCast { expr, ty }, e.span())
-            },
-        );
+    let assign = ternary
+        .clone()
+        .then(just(Token::Assign).ignore_then(ternary).or_not())
+        .map_with(|(lhs, rhs), e| match rhs {
+            Some(rhs) => {
+                let lhs = Box::new(lhs);
+                let rhs = Box::new(rhs);
+                (Expr::Assign { lhs, rhs }, e.span())
+            }
+            None => lhs,
+        });
 
-        let binops = as_
-            .clone()
-            .then(binop.then(as_).repeated().collect::<Vec<_>>())
-            .map(|(lhs, ops)| climb_prec(lhs, &mut ops.into_iter().peekable(), 0));
-
-        let ternary = binops
-            .then(
-                just(Token::Question)
-                    .ignore_then(this.clone())
-                    .then_ignore(just(Token::Colon))
-                    .then(this)
-                    .or_not(),
-            )
-            .map_with(|(cond, tern), e| match tern {
-                Some((then, els)) => {
-                    let cond = Box::new(cond);
-                    let then = Box::new(then);
-                    let else_ = Box::new(els);
-                    (Expr::Conditional { cond, then, else_ }, e.span())
-                }
-                None => cond,
-            });
-
-        let assign = ternary
-            .clone()
-            .then(just(Token::Assign).ignore_then(ternary).or_not())
-            .map_with(|(lhs, rhs), e| match rhs {
-                Some(rhs) => {
-                    let lhs = Box::new(lhs);
-                    let rhs = Box::new(rhs);
-                    (Expr::Assign { lhs, rhs }, e.span())
-                }
-                None => lhs,
-            });
-
-        assign.labelled("expression").as_context()
-    })
+    assign.labelled("expression").as_context()
 }
 
 fn climb_prec<'src, I>(

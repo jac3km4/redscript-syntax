@@ -8,7 +8,7 @@ use redscript_ast::{
     SpannedExpr, SpannedField, SpannedFunction, SpannedItem, SpannedItemDecl, Visibility,
 };
 
-use super::{block, expr::expr_with_span, ident, type_params, type_with_span, Parse};
+use super::{block, expr_with_span, ident, type_params, type_with_span, Parse};
 
 #[inline]
 pub fn item_decl<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedItemDecl<'src>> {
@@ -66,7 +66,7 @@ fn function<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedFunction<'src>>
         .then(ident())
         .then(just(Token::Colon).ignore_then(ty.clone()))
         .map_with(|((qualifiers, name), typ), e| {
-            (Param::new(name, typ, qualifiers.value), e.span())
+            (Param::new(name, Some(typ), qualifiers.value), e.span())
         })
         .separated_by(just(Token::Comma))
         .allow_trailing()
@@ -283,7 +283,7 @@ mod tests {
                         [],
                         [Param::new(
                             "arg",
-                            Type::plain("Int32"),
+                            Some(Type::plain("Int32")),
                             ParamQualifiers::OPTIONAL
                         )],
                         Some(Type::plain("Int32").into()),
@@ -370,8 +370,8 @@ mod tests {
                 "Test",
                 [],
                 [
-                    Param::new("arg1", Type::plain("Int32"), ParamQualifiers::empty()),
-                    Param::new("arg2", Type::plain("Int64"), ParamQualifiers::empty()),
+                    Param::new("arg1", Some(Type::plain("Int32")), ParamQualifiers::empty()),
+                    Param::new("arg2", Some(Type::plain("Int64")), ParamQualifiers::empty()),
                 ],
                 Some(Type::plain("Int32").into()),
                 Some(FunctionBody::Block(Block::single(Stmt::Return(Some(
@@ -438,7 +438,7 @@ mod tests {
                         )],
                         [Param::new(
                             "arg",
-                            Type::plain("Int32"),
+                            Some(Type::plain("Int32")),
                             ParamQualifiers::OPTIONAL
                         )],
                         Some(Type::plain("Int32").into()),

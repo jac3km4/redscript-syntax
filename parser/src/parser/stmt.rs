@@ -2,22 +2,17 @@ use std::iter;
 
 use crate::lexer::Token;
 use chumsky::prelude::*;
-use redscript_ast::{Case, ConditionalBlock, SpannedStmt, Stmt};
+use redscript_ast::{Case, ConditionalBlock, Span, SpannedBlock, SpannedExpr, SpannedStmt, Stmt};
 
-use super::{block_rec, expr::expr_with_span, ident, type_with_span, Parse};
-
-#[inline]
-pub fn stmt<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedStmt<'src>> {
-    recursive(stmt_rec)
-}
+use super::{ident, type_with_span, Parse};
 
 pub fn stmt_rec<'tok, 'src: 'tok>(
+    expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
     stmt: impl Parse<'tok, 'src, SpannedStmt<'src>>,
+    block: impl Parse<'tok, 'src, SpannedBlock<'src>>,
 ) -> impl Parse<'tok, 'src, SpannedStmt<'src>> {
     let ident = ident();
     let ty = type_with_span();
-    let expr = expr_with_span();
-    let block = block_rec(stmt.clone());
 
     let semicolon = just(Token::Semicolon).or_not().validate(|semi, ctx, errs| {
         if semi.is_none() {

@@ -18,6 +18,8 @@ fn formatted_files() {
             let settings = FormatSettings::default();
             let formatted = module.display(&settings).to_string();
             assert_eq!(formatted, file.source());
-        };
+        } else {
+            panic!("failed to parse {}: {errors:?}", file.path().display());
+        }
     }
 }

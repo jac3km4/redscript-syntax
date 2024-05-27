@@ -55,4 +55,8 @@ func Test() {
   for y in [1, 2, 3] {
     FTLog(s"f: \(y)");
   }
+  let f1 = (a) -> a;
+  let f2 = (a) -> {
+    return a;
+  };
 }

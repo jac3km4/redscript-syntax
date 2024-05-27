@@ -4,53 +4,50 @@ use crate::lexer::Token;
 use chumsky::{container::Container, prelude::*};
 use redscript_ast::{
     Aggregate, Annotation, Enum, EnumVariant, Field, Function, FunctionBody, Import, Item,
-    ItemDecl, ItemQualifiers, Param, ParamQualifiers, Path, Span, SpannedAnnotation, SpannedEnum,
-    SpannedExpr, SpannedField, SpannedFunction, SpannedItem, SpannedItemDecl, Visibility,
+    ItemDecl, ItemQualifiers, Param, ParamQualifiers, Path, Span, SpannedAnnotation, SpannedBlock,
+    SpannedEnum, SpannedExpr, SpannedField, SpannedFunction, SpannedItem, SpannedItemDecl,
+    Visibility,
 };
 
-use super::{block, expr_with_span, ident, type_params, type_with_span, Parse};
-
-#[inline]
-pub fn item_decl<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedItemDecl<'src>> {
-    recursive(item_decl_rec)
-}
+use super::{ident, type_params, type_with_span, Parse};
 
 pub fn item_decl_rec<'tok, 'src: 'tok>(
     item_decl: impl Parse<'tok, 'src, SpannedItemDecl<'src>>,
+    block: impl Parse<'tok, 'src, SpannedBlock<'src>>,
+    expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
 ) -> impl Parse<'tok, 'src, SpannedItemDecl<'src>> {
-    annotation()
+    annotation(expr.clone())
         .map_with(|a, e| (a, e.span()))
         .repeated()
         .collect::<Vec<_>>()
         .then(visibility().or_not())
         .then(item_qualifier().repeated().collect::<BitCollection<_>>())
-        .then(item_rec(item_decl))
+        .then(item_rec(item_decl, block, expr))
         .map(|(((annotations, visibility), qualifiers), item)| {
             ItemDecl::new(annotations, visibility, qualifiers.value, item)
         })
         .labelled("declaration")
 }
 
-#[inline]
-#[allow(unused)]
-pub fn item<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedItem<'src>> {
-    item_rec(item_decl())
-}
-
-fn item_rec<'tok, 'src: 'tok>(
+pub fn item_rec<'tok, 'src: 'tok>(
     item_decl: impl Parse<'tok, 'src, SpannedItemDecl<'src>>,
+    block: impl Parse<'tok, 'src, SpannedBlock<'src>>,
+    expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
 ) -> impl Parse<'tok, 'src, SpannedItem<'src>> {
     choice((
         import().map(Item::Import),
         aggregate(item_decl),
         enum_().map(Item::Enum),
-        function().map(Item::Function),
-        field().map(Item::Let),
+        function(block, expr.clone()).map(Item::Function),
+        field(expr).map(Item::Let),
     ))
     .labelled("item")
 }
 
-fn function<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedFunction<'src>> {
+fn function<'tok, 'src: 'tok>(
+    block: impl Parse<'tok, 'src, SpannedBlock<'src>>,
+    expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
+) -> impl Parse<'tok, 'src, SpannedFunction<'src>> {
     let param_qualifiers = select! {
         Token::Ident("opt") => ParamQualifiers::OPTIONAL,
         Token::Ident("out") => ParamQualifiers::OUT,
@@ -74,9 +71,9 @@ fn function<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedFunction<'src>>
         .delimited_by(just(Token::LParen), just(Token::RParen));
 
     let function_body = choice((
-        block().map(FunctionBody::Block),
+        block.map(FunctionBody::Block),
         just(Token::Assign)
-            .ignore_then(item_expr())
+            .ignore_then(expr)
             .map(|e| FunctionBody::Inline(e.into())),
     ));
 
@@ -98,11 +95,13 @@ fn function<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedFunction<'src>>
         })
 }
 
-fn field<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedField<'src>> {
+fn field<'tok, 'src: 'tok>(
+    expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
+) -> impl Parse<'tok, 'src, SpannedField<'src>> {
     just(Token::Ident("let"))
         .ignore_then(ident())
         .then(just(Token::Colon).ignore_then(type_with_span()))
-        .then(just(Token::Assign).ignore_then(item_expr()).or_not())
+        .then(just(Token::Assign).ignore_then(expr).or_not())
         .then_ignore(just(Token::Semicolon))
         .map(|((name, ty), default)| Field::new(name, ty.into(), default.map(Box::new)))
 }
@@ -201,12 +200,13 @@ fn visibility<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Visibility> {
     .labelled("item visibility")
 }
 
-fn annotation<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedAnnotation<'src>> {
+fn annotation<'tok, 'src: 'tok>(
+    expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
+) -> impl Parse<'tok, 'src, SpannedAnnotation<'src>> {
     just(Token::At)
         .ignore_then(ident())
         .then(
-            item_expr()
-                .separated_by(just(Token::Comma))
+            expr.separated_by(just(Token::Comma))
                 .allow_trailing()
                 .collect::<Vec<_>>()
                 .delimited_by(just(Token::LParen), just(Token::RParen)),
@@ -229,11 +229,6 @@ fn item_qualifier<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, ItemQualifiers> 
 
     }
     .labelled("item qualifier")
-}
-
-#[inline(never)]
-fn item_expr<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)> {
-    expr_with_span()
 }
 
 #[derive(Debug, Default, Clone, Copy)]

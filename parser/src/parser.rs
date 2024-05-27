@@ -6,10 +6,10 @@ mod item;
 mod stmt;
 
 use expr::expr_with_span_rec;
-pub use item::{item, item_decl};
+use item::item_rec;
 use redscript_ast::{
-    Block, Expr, FileId, Module, Path, Span, Spanned, SpannedBlock, SpannedExpr, SpannedModule,
-    SpannedStmt, SpannedTypeParam, Stmt, Type, TypeParam, Variance,
+    Block, Expr, FileId, Module, Path, Span, Spanned, SpannedBlock, SpannedExpr, SpannedItem,
+    SpannedItemDecl, SpannedModule, SpannedStmt, SpannedTypeParam, Stmt, Type, TypeParam, Variance,
 };
 
 use self::{item::item_decl_rec, stmt::stmt_rec};
@@ -28,22 +28,14 @@ impl<'tok, 'src: 'tok, A, P> Parse<'tok, 'src, A> for P where
 {
 }
 
-fn block_stmt_expr_parsers<'tok, 'src: 'tok>() -> (
-    impl Parse<'tok, 'src, SpannedBlock<'src>>,
-    impl Parse<'tok, 'src, SpannedStmt<'src>>,
-    impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
-) {
-    let mut stmt = Recursive::declare();
-    let mut expr = Recursive::declare();
-    let block = block_rec(stmt.clone());
-    stmt.define(stmt_rec(expr.clone(), stmt.clone(), block.clone()));
-    expr.define(expr_with_span_rec(expr.clone(), block.clone()));
-    (block, stmt, expr)
+#[inline]
+pub fn item_decl<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedItemDecl<'src>> {
+    item_decl_parsers().0
 }
 
 #[inline]
-fn block<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedBlock<'src>> {
-    block_stmt_expr_parsers().0
+pub fn item<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedItem<'src>> {
+    item_decl_parsers().1
 }
 
 #[inline]
@@ -59,6 +51,29 @@ fn expr_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, (SpannedExpr<'sr
 #[inline]
 pub fn expr<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedExpr<'src>> {
     expr_with_span().map(|(expr, _)| expr)
+}
+
+fn item_decl_parsers<'tok, 'src: 'tok>() -> (
+    impl Parse<'tok, 'src, SpannedItemDecl<'src>>,
+    impl Parse<'tok, 'src, SpannedItem<'src>>,
+) {
+    let mut decl = Recursive::declare();
+    let (block, _, expr) = block_stmt_expr_parsers();
+    decl.define(item_decl_rec(decl.clone(), block.clone(), expr.clone()));
+    (decl.clone(), item_rec(decl, block, expr))
+}
+
+fn block_stmt_expr_parsers<'tok, 'src: 'tok>() -> (
+    impl Parse<'tok, 'src, SpannedBlock<'src>>,
+    impl Parse<'tok, 'src, SpannedStmt<'src>>,
+    impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
+) {
+    let mut stmt = Recursive::declare();
+    let mut expr = Recursive::declare();
+    let block = block_rec(stmt.clone());
+    stmt.define(stmt_rec(expr.clone(), stmt.clone(), block.clone()));
+    expr.define(expr_with_span_rec(expr.clone(), block.clone()));
+    (block, stmt, expr)
 }
 
 fn block_rec<'tok, 'src: 'tok>(
@@ -82,9 +97,6 @@ fn block_rec<'tok, 'src: 'tok>(
 }
 
 pub fn module<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedModule<'src>> {
-    let mut item_decl = Recursive::declare();
-    item_decl.define(item_decl_rec(item_decl.clone()));
-
     just(Token::Ident("module"))
         .ignore_then(
             ident()
@@ -94,7 +106,7 @@ pub fn module<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedModule<'src>>
         )
         .or_not()
         .then(
-            item_decl
+            item_decl()
                 .map_with(|i, e| (i, e.span()))
                 .repeated()
                 .collect::<Vec<_>>(),

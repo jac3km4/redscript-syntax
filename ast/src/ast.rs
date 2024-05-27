@@ -33,7 +33,7 @@ impl<'src, K: AstKind> Module<'src, K> {
                 .items
                 .into_vec()
                 .into_iter()
-                .map(|i| i.into_val().unwrapped())
+                .map(|i| i.into_wrapped().unwrapped())
                 .collect(),
         }
     }
@@ -75,11 +75,11 @@ impl<'src, K: AstKind> ItemDecl<'src, K> {
                 .annotations
                 .into_vec()
                 .into_iter()
-                .map(|a| a.into_val().unwrapped())
+                .map(|a| a.into_wrapped().unwrapped())
                 .collect(),
             visibility: self.visibility,
             qualifiers: self.qualifiers,
-            item: self.item.into_val().unwrapped(),
+            item: self.item.into_wrapped().unwrapped(),
         }
     }
 }
@@ -137,14 +137,14 @@ impl<'src, K: AstKind> Aggregate<'src, K> {
                 .type_params
                 .into_vec()
                 .into_iter()
-                .map(|p| p.into_val().unwrapped())
+                .map(|p| p.into_wrapped().unwrapped())
                 .collect(),
-            extends: self.extends.map(|ty| (*ty).into_val().into()),
+            extends: self.extends.map(|ty| (*ty).into_wrapped().into()),
             items: self
                 .items
                 .into_vec()
                 .into_iter()
-                .map(|m| m.into_val().unwrapped())
+                .map(|m| m.into_wrapped().unwrapped())
                 .collect(),
         }
     }
@@ -169,8 +169,8 @@ impl<'src, K: AstKind> Field<'src, K> {
     pub fn unwrapped(self) -> Field<'src> {
         Field {
             name: self.name,
-            ty: (*self.ty).into_val().into(),
-            default: self.default.map(|d| (*d).into_val().unwrapped().into()),
+            ty: (*self.ty).into_wrapped().into(),
+            default: self.default.map(|d| (*d).into_wrapped().unwrapped().into()),
         }
     }
 }
@@ -208,16 +208,16 @@ impl<'src, K: AstKind> Function<'src, K> {
                 .params
                 .into_vec()
                 .into_iter()
-                .map(|p| p.into_val().unwrapped())
+                .map(|p| p.into_wrapped().unwrapped())
                 .collect(),
             type_params: self
                 .type_params
                 .into_vec()
                 .into_iter()
-                .map(|p| p.into_val().unwrapped())
+                .map(|p| p.into_wrapped().unwrapped())
                 .collect(),
-            return_ty: self.return_ty.map(|ty| (*ty).into_val().into()),
-            body: self.body.map(|b| b.into_val().unwrapped()),
+            return_ty: self.return_ty.map(|ty| (*ty).into_wrapped().into()),
+            body: self.body.map(|b| b.into_wrapped().unwrapped()),
         }
     }
 }
@@ -231,8 +231,8 @@ pub enum FunctionBody<'src, K: AstKind = Identity> {
 impl<'src, K: AstKind> FunctionBody<'src, K> {
     pub fn unwrapped(self) -> FunctionBody<'src> {
         match self {
-            FunctionBody::Block(b) => FunctionBody::Block(b.into_val().unwrapped()),
-            FunctionBody::Inline(e) => FunctionBody::Inline((*e).into_val().unwrapped().into()),
+            FunctionBody::Block(b) => FunctionBody::Block(b.into_wrapped().unwrapped()),
+            FunctionBody::Inline(e) => FunctionBody::Inline((*e).into_wrapped().unwrapped().into()),
         }
     }
 }
@@ -258,7 +258,7 @@ impl<'src, K: AstKind> Enum<'src, K> {
                 .variants
                 .into_vec()
                 .into_iter()
-                .map(Wrapper::into_val)
+                .map(Wrapper::into_wrapped)
                 .collect(),
         }
     }
@@ -297,7 +297,7 @@ impl<'src, K: AstKind> Annotation<'src, K> {
                 .args
                 .into_vec()
                 .into_iter()
-                .map(|a| a.into_val().unwrapped())
+                .map(|a| a.into_wrapped().unwrapped())
                 .collect(),
         }
     }
@@ -343,7 +343,7 @@ impl<'src, K: AstKind> TypeParam<'src, K> {
         TypeParam {
             variance: self.variance,
             name: self.name,
-            upper_bound: self.upper_bound.map(|ty| (*ty).into_val().into()),
+            upper_bound: self.upper_bound.map(|ty| (*ty).into_wrapped().into()),
         }
     }
 }
@@ -374,7 +374,7 @@ impl<'src, K: AstKind> Param<'src, K> {
     pub fn unwrapped(self) -> Param<'src> {
         Param {
             name: self.name,
-            ty: self.ty.map(Wrapper::into_val),
+            ty: self.ty.map(Wrapper::into_wrapped),
             qualifiers: self.qualifiers,
         }
     }
@@ -417,7 +417,7 @@ impl<'src, K: AstKind> Block<'src, K> {
                 .stmts
                 .into_vec()
                 .into_iter()
-                .map(|s| s.into_val().unwrapped())
+                .map(|s| s.into_wrapped().unwrapped())
                 .collect(),
         }
     }
@@ -455,24 +455,24 @@ impl<'src, K: AstKind> Stmt<'src, K> {
         match self {
             Stmt::Let { name, ty, value } => Stmt::Let {
                 name,
-                ty: ty.map(|ty| (*ty).into_val().into()),
-                value: value.map(|v| (*v).into_val().unwrapped().into()),
+                ty: ty.map(|ty| (*ty).into_wrapped().into()),
+                value: value.map(|v| (*v).into_wrapped().unwrapped().into()),
             },
             Stmt::Switch {
                 expr,
                 cases,
                 default,
             } => Stmt::Switch {
-                expr: (*expr).into_val().unwrapped().into(),
+                expr: (*expr).into_wrapped().unwrapped().into(),
                 cases: cases
                     .into_vec()
                     .into_iter()
-                    .map(|c| c.into_val().unwrapped())
+                    .map(|c| c.into_wrapped().unwrapped())
                     .collect(),
                 default: default.map(|d| {
                     d.into_vec()
                         .into_iter()
-                        .map(|s| s.into_val().unwrapped())
+                        .map(|s| s.into_wrapped().unwrapped())
                         .collect()
                 }),
             },
@@ -480,19 +480,19 @@ impl<'src, K: AstKind> Stmt<'src, K> {
                 blocks: blocks
                     .into_vec()
                     .into_iter()
-                    .map(|b| b.into_val().unwrapped())
+                    .map(|b| b.into_wrapped().unwrapped())
                     .collect(),
-                else_: else_.map(|b| b.into_val().unwrapped()),
+                else_: else_.map(|b| b.into_wrapped().unwrapped()),
             },
-            Stmt::While(block) => Stmt::While(block.into_val().unwrapped().into()),
+            Stmt::While(block) => Stmt::While(block.into_wrapped().unwrapped().into()),
             Stmt::ForIn { name, iter, body } => Stmt::ForIn {
                 name,
-                iter: (*iter).into_val().unwrapped().into(),
-                body: body.into_val().unwrapped(),
+                iter: (*iter).into_wrapped().unwrapped().into(),
+                body: body.into_wrapped().unwrapped(),
             },
-            Stmt::Return(v) => Stmt::Return(v.map(|v| (*v).into_val().unwrapped().into())),
+            Stmt::Return(v) => Stmt::Return(v.map(|v| (*v).into_wrapped().unwrapped().into())),
             Stmt::Break => Stmt::Break,
-            Stmt::Expr(e) => Stmt::Expr((*e).into_val().unwrapped().into()),
+            Stmt::Expr(e) => Stmt::Expr((*e).into_wrapped().unwrapped().into()),
         }
     }
 }
@@ -510,8 +510,8 @@ impl<'src, K: AstKind> ConditionalBlock<'src, K> {
 
     pub fn unwrapped(self) -> ConditionalBlock<'src> {
         ConditionalBlock {
-            cond: self.cond.into_val().unwrapped(),
-            body: self.body.into_val().unwrapped(),
+            cond: self.cond.into_wrapped().unwrapped(),
+            body: self.body.into_wrapped().unwrapped(),
         }
     }
 }
@@ -532,12 +532,12 @@ impl<'src, K: AstKind> Case<'src, K> {
 
     pub fn unwrapped(self) -> Case<'src> {
         Case {
-            label: self.label.into_val().unwrapped(),
+            label: self.label.into_wrapped().unwrapped(),
             body: self
                 .body
                 .into_vec()
                 .into_iter()
-                .map(|s| s.into_val().unwrapped())
+                .map(|s| s.into_wrapped().unwrapped())
                 .collect(),
         }
     }
@@ -607,78 +607,78 @@ impl<'src, K: AstKind> Expr<'src, K> {
             Expr::ArrayLit(a) => Expr::ArrayLit(
                 a.into_vec()
                     .into_iter()
-                    .map(|e| e.into_val().unwrapped())
+                    .map(|e| e.into_wrapped().unwrapped())
                     .collect(),
             ),
             Expr::InterpolatedString(parts) => Expr::InterpolatedString(
                 parts
                     .into_vec()
                     .into_iter()
-                    .map(|p| p.into_val().unwrapped())
+                    .map(|p| p.into_wrapped().unwrapped())
                     .collect(),
             ),
             Expr::Assign { lhs, rhs } => Expr::Assign {
-                lhs: (*lhs).into_val().unwrapped().into(),
-                rhs: (*rhs).into_val().unwrapped().into(),
+                lhs: (*lhs).into_wrapped().unwrapped().into(),
+                rhs: (*rhs).into_wrapped().unwrapped().into(),
             },
             Expr::BinOp { lhs, op, rhs } => Expr::BinOp {
-                lhs: (*lhs).into_val().unwrapped().into(),
+                lhs: (*lhs).into_wrapped().unwrapped().into(),
                 op,
-                rhs: (*rhs).into_val().unwrapped().into(),
+                rhs: (*rhs).into_wrapped().unwrapped().into(),
             },
             Expr::UnOp { op, expr } => Expr::UnOp {
                 op,
-                expr: (*expr).into_val().unwrapped().into(),
+                expr: (*expr).into_wrapped().unwrapped().into(),
             },
             Expr::Call {
                 expr,
                 type_args,
                 args,
             } => Expr::Call {
-                expr: (*expr).into_val().unwrapped().into(),
+                expr: (*expr).into_wrapped().unwrapped().into(),
                 type_args: type_args
                     .into_vec()
                     .into_iter()
-                    .map(Wrapper::into_val)
+                    .map(Wrapper::into_wrapped)
                     .collect(),
                 args: args
                     .into_vec()
                     .into_iter()
-                    .map(|a| a.into_val().unwrapped())
+                    .map(|a| a.into_wrapped().unwrapped())
                     .collect(),
             },
             Expr::Member { expr, member } => Expr::Member {
-                expr: (*expr).into_val().unwrapped().into(),
+                expr: (*expr).into_wrapped().unwrapped().into(),
                 member,
             },
             Expr::Index { expr, index } => Expr::Index {
-                expr: (*expr).into_val().unwrapped().into(),
-                index: (*index).into_val().unwrapped().into(),
+                expr: (*expr).into_wrapped().unwrapped().into(),
+                index: (*index).into_wrapped().unwrapped().into(),
             },
             Expr::DynCast { expr, ty } => Expr::DynCast {
-                expr: (*expr).into_val().unwrapped().into(),
-                ty: (*ty).into_val().into(),
+                expr: (*expr).into_wrapped().unwrapped().into(),
+                ty: (*ty).into_wrapped().into(),
             },
             Expr::New { ty, args } => Expr::New {
-                ty: (*ty).into_val().into(),
+                ty: (*ty).into_wrapped().into(),
                 args: args
                     .into_vec()
                     .into_iter()
-                    .map(|a| a.into_val().unwrapped())
+                    .map(|a| a.into_wrapped().unwrapped())
                     .collect(),
             },
             Expr::Conditional { cond, then, else_ } => Expr::Conditional {
-                cond: (*cond).into_val().unwrapped().into(),
-                then: (*then).into_val().unwrapped().into(),
-                else_: (*else_).into_val().unwrapped().into(),
+                cond: (*cond).into_wrapped().unwrapped().into(),
+                then: (*then).into_wrapped().unwrapped().into(),
+                else_: (*else_).into_wrapped().unwrapped().into(),
             },
             Expr::Lambda { params, body } => Expr::Lambda {
                 params: params
                     .into_vec()
                     .into_iter()
-                    .map(|p| p.into_val().unwrapped())
+                    .map(|p| p.into_wrapped().unwrapped())
                     .collect(),
-                body: body.into_val().unwrapped(),
+                body: body.into_wrapped().unwrapped(),
             },
             Expr::This => Expr::This,
             Expr::Super => Expr::Super,
@@ -712,7 +712,7 @@ pub enum StrPart<'src, K: AstKind = Identity> {
 impl<'src, K: AstKind> StrPart<'src, K> {
     pub fn unwrapped(self) -> StrPart<'src> {
         match self {
-            StrPart::Expr(e) => StrPart::Expr(e.into_val().unwrapped()),
+            StrPart::Expr(e) => StrPart::Expr(e.into_wrapped().unwrapped()),
             StrPart::Str(s) => StrPart::Str(s),
         }
     }
@@ -862,30 +862,30 @@ impl AstKind for WithSpan {
 }
 
 pub trait Wrapper<A> {
-    fn as_val(&self) -> &A;
-    fn into_val(self) -> A;
+    fn as_wrapped(&self) -> &A;
+    fn into_wrapped(self) -> A;
 }
 
 impl<A> Wrapper<A> for A {
     #[inline]
-    fn as_val(&self) -> &A {
+    fn as_wrapped(&self) -> &A {
         self
     }
 
     #[inline]
-    fn into_val(self) -> A {
+    fn into_wrapped(self) -> A {
         self
     }
 }
 
 impl<A, B> Wrapper<A> for (A, B) {
     #[inline]
-    fn as_val(&self) -> &A {
+    fn as_wrapped(&self) -> &A {
         &self.0
     }
 
     #[inline]
-    fn into_val(self) -> A {
+    fn into_wrapped(self) -> A {
         self.0
     }
 }

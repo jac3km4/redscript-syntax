@@ -30,12 +30,12 @@ impl<'tok, 'src: 'tok, A, P> Parse<'tok, 'src, A> for P where
 
 #[inline]
 pub fn item_decl<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedItemDecl<'src>> {
-    item_decl_parsers().0
+    all_parsers().0
 }
 
 #[inline]
 pub fn item<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedItem<'src>> {
-    item_decl_parsers().1
+    all_parsers().1
 }
 
 #[inline]
@@ -53,14 +53,23 @@ pub fn expr<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedExpr<'src>> {
     expr_with_span().map(|(expr, _)| expr)
 }
 
-fn item_decl_parsers<'tok, 'src: 'tok>() -> (
+pub(super) fn all_parsers<'tok, 'src: 'tok>() -> (
     impl Parse<'tok, 'src, SpannedItemDecl<'src>>,
     impl Parse<'tok, 'src, SpannedItem<'src>>,
+    impl Parse<'tok, 'src, SpannedBlock<'src>>,
+    impl Parse<'tok, 'src, SpannedStmt<'src>>,
+    impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
 ) {
     let mut decl = Recursive::declare();
-    let (block, _, expr) = block_stmt_expr_parsers();
+    let (block, stmt, expr) = block_stmt_expr_parsers();
     decl.define(item_decl_rec(decl.clone(), block.clone(), expr.clone()));
-    (decl.clone(), item_rec(decl, block, expr))
+    (
+        decl.clone(),
+        item_rec(decl, block.clone(), expr.clone()),
+        block,
+        stmt,
+        expr,
+    )
 }
 
 fn block_stmt_expr_parsers<'tok, 'src: 'tok>() -> (
@@ -122,6 +131,11 @@ fn ident<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, &'src str> {
 }
 
 #[inline]
+fn ident_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Spanned<&'src str>> {
+    ident().map_with(|ident, e| (ident, e.span()))
+}
+
+#[inline]
 fn type_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Spanned<Type<'src>>> {
     type_().map_with(|ty, e| (ty, e.span()))
 }
@@ -162,7 +176,7 @@ fn type_param<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedTypeParam<'sr
 
     variance
         .or_not()
-        .then(ident())
+        .then(ident_with_span())
         .then(
             just(Token::Ident("extends"))
                 .ignore_then(type_with_span())
@@ -217,7 +231,7 @@ mod tests {
                         [],
                         None,
                         ItemQualifiers::empty(),
-                        Item::Import(Import::All(Path::new(["Std"])))
+                        Item::Import(Import::All(Path::new(["Std"]))),
                     ),
                     ItemDecl::new(
                         [],
@@ -225,16 +239,16 @@ mod tests {
                         ItemQualifiers::empty(),
                         Item::Import(Import::Select(
                             Path::new(["Something"]),
-                            ["Test1", "Test2"].into()
-                        ))
+                            ["Test1", "Test2"].into(),
+                        )),
                     ),
                     ItemDecl::new(
                         [],
                         None,
                         ItemQualifiers::empty(),
-                        Item::Import(Import::Exact(Path::new(["Exact", "Path"])))
+                        Item::Import(Import::Exact(Path::new(["Exact", "Path"]))),
                     ),
-                ]
+                ],
             )
         );
     }
@@ -262,13 +276,13 @@ mod tests {
                         [],
                         Some(Visibility::Public),
                         ItemQualifiers::STATIC,
-                        Item::Function(Function::new("Dummy", [], [], None, None))
+                        Item::Function(Function::new("Dummy", [], [], None, None)),
                     ),
                     ItemDecl::new(
                         [],
                         None,
                         ItemQualifiers::NATIVE,
-                        Item::Struct(Aggregate::new("Test", [], None, []))
+                        Item::Struct(Aggregate::new("Test", [], None, [])),
                     ),
                     ItemDecl::new(
                         [],
@@ -281,10 +295,10 @@ mod tests {
                             Some(Type::plain("Int32").into()),
                             Some(FunctionBody::Inline(
                                 Expr::Constant(Constant::I32(1)).into()
-                            ))
-                        ))
+                            )),
+                        )),
                     ),
-                ]
+                ],
             )
         );
     }

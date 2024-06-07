@@ -4,15 +4,14 @@ use crate::lexer::Token;
 use chumsky::prelude::*;
 use redscript_ast::{Case, ConditionalBlock, Span, SpannedBlock, SpannedExpr, SpannedStmt, Stmt};
 
-use super::{ident, type_with_span, Parse};
+use super::{ident_with_span, type_with_span, Parse};
 
 pub fn stmt_rec<'tok, 'src: 'tok>(
     expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
     stmt: impl Parse<'tok, 'src, SpannedStmt<'src>>,
     block: impl Parse<'tok, 'src, SpannedBlock<'src>>,
 ) -> impl Parse<'tok, 'src, SpannedStmt<'src>> {
-    let ident = ident();
-    let ty = type_with_span();
+    let typ = type_with_span();
 
     let semicolon = just(Token::Semicolon).or_not().validate(|semi, ctx, errs| {
         if semi.is_none() {
@@ -21,14 +20,14 @@ pub fn stmt_rec<'tok, 'src: 'tok>(
     });
 
     let let_ = just(Token::Ident("let"))
-        .ignore_then(ident.clone())
-        .then(just(Token::Colon).ignore_then(ty).or_not())
+        .ignore_then(ident_with_span())
+        .then(just(Token::Colon).ignore_then(typ).or_not())
         .then(just(Token::Assign).ignore_then(expr.clone()).or_not())
         .then_ignore(semicolon.clone())
-        .map(|((name, ty), value)| {
+        .map(|((name, typ), value)| {
             let value = value.map(Box::new);
-            let ty = ty.map(Box::new);
-            Stmt::Let { name, ty, value }
+            let typ = typ.map(Box::new);
+            Stmt::Let { name, typ, value }
         });
 
     let case_body = stmt
@@ -79,7 +78,7 @@ pub fn stmt_rec<'tok, 'src: 'tok>(
         .map(|(cond, body)| Stmt::While(ConditionalBlock::new(cond, body).into()));
 
     let for_stmt = just(Token::Ident("for"))
-        .ignore_then(ident)
+        .ignore_then(ident_with_span())
         .then_ignore(just(Token::Ident("in")))
         .then(expr.clone())
         .then(block)
@@ -98,6 +97,10 @@ pub fn stmt_rec<'tok, 'src: 'tok>(
         .ignore_then(semicolon.clone())
         .map(|_| Stmt::Break);
 
+    let continue_stmt = just(Token::Ident("continue"))
+        .ignore_then(semicolon.clone())
+        .map(|_| Stmt::Continue);
+
     let expr_stmt = expr.then_ignore(semicolon).map(|e| Stmt::Expr(e.into()));
 
     choice((
@@ -108,6 +111,7 @@ pub fn stmt_rec<'tok, 'src: 'tok>(
         for_stmt,
         return_stmt,
         break_stmt,
+        continue_stmt,
         expr_stmt,
     ))
     .labelled("statement")
@@ -258,7 +262,7 @@ mod tests {
             res,
             Stmt::Let {
                 name: "a",
-                ty: Some(Type::plain("Int32").into()),
+                typ: Some(Type::plain("Int32").into()),
                 value: Some(Expr::Constant(Constant::I32(1)).into()),
             }
         );

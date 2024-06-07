@@ -9,7 +9,7 @@ use redscript_ast::{
     Visibility,
 };
 
-use super::{ident, type_params, type_with_span, Parse};
+use super::{ident, ident_with_span, type_params, type_with_span, Parse};
 
 pub fn item_decl_rec<'tok, 'src: 'tok>(
     item_decl: impl Parse<'tok, 'src, SpannedItemDecl<'src>>,
@@ -78,7 +78,7 @@ fn function<'tok, 'src: 'tok>(
     ));
 
     just(Token::Ident("func"))
-        .ignore_then(ident())
+        .ignore_then(ident_with_span())
         .then(type_params().or_not())
         .then(params)
         .then(just(Token::Arrow).ignore_then(ty).or_not())
@@ -99,7 +99,7 @@ fn field<'tok, 'src: 'tok>(
     expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
 ) -> impl Parse<'tok, 'src, SpannedField<'src>> {
     just(Token::Ident("let"))
-        .ignore_then(ident())
+        .ignore_then(ident_with_span())
         .then(just(Token::Colon).ignore_then(type_with_span()))
         .then(just(Token::Assign).ignore_then(expr).or_not())
         .then_ignore(just(Token::Semicolon))
@@ -118,7 +118,7 @@ fn enum_<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedEnum<'src>> {
         .delimited_by(just(Token::LBrace), just(Token::RBrace));
 
     just(Token::Ident("enum"))
-        .ignore_then(ident())
+        .ignore_then(ident_with_span())
         .then(variants)
         .then_ignore(just(Token::Semicolon).or_not())
         .map(|(name, variants)| Enum::new(name, variants))
@@ -139,7 +139,7 @@ fn aggregate<'tok, 'src: 'tok>(
         .delimited_by(just(Token::LBrace), just(Token::RBrace));
 
     is_struct
-        .then(ident())
+        .then(ident_with_span())
         .then(type_params().or_not())
         .then(
             just(Token::Ident("extends"))

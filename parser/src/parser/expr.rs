@@ -91,7 +91,7 @@ fn expr_with_span_internal<'tok, 'src: 'tok>(
         .map(|parts| Expr::InterpolatedString(parts.into()));
 
     let ident = ident();
-    let ty = type_with_span();
+    let typ = type_with_span();
 
     let arguments = expr
         .clone()
@@ -99,7 +99,7 @@ fn expr_with_span_internal<'tok, 'src: 'tok>(
         .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(just(Token::LParen), just(Token::RParen));
-    let type_arguments = ty
+    let type_arguments = typ
         .clone()
         .separated_by(just(Token::Comma))
         .allow_trailing()
@@ -107,10 +107,10 @@ fn expr_with_span_internal<'tok, 'src: 'tok>(
         .delimited_by(just(Token::LAngle), just(Token::RAngle));
 
     let new = just(Token::Ident("new"))
-        .ignore_then(ty.clone())
+        .ignore_then(typ.clone())
         .then(arguments.clone())
-        .map(|(ty, args)| Expr::New {
-            ty: ty.into(),
+        .map(|(typ, args)| Expr::New {
+            typ: typ.into(),
             args: args.into(),
         });
 
@@ -124,8 +124,8 @@ fn expr_with_span_internal<'tok, 'src: 'tok>(
 
     let lambda = ident
         .clone()
-        .then(just(Token::Colon).ignore_then(ty.clone()).or_not())
-        .map_with(|(name, ty), e| (Param::new(name, ty, Default::default()), e.span()))
+        .then(just(Token::Colon).ignore_then(typ.clone()).or_not())
+        .map_with(|(name, typ), e| (Param::new(name, typ, Default::default()), e.span()))
         .separated_by(just(Token::Comma))
         .allow_trailing()
         .collect::<Vec<_>>()
@@ -210,11 +210,11 @@ fn expr_with_span_internal<'tok, 'src: 'tok>(
     });
 
     let as_ = unops.foldl_with(
-        just(Token::Ident("as")).ignore_then(ty).repeated(),
-        |expr, ty, e| {
+        just(Token::Ident("as")).ignore_then(typ).repeated(),
+        |expr, typ, e| {
             let expr = Box::new(expr);
-            let ty = Box::new(ty);
-            (Expr::DynCast { expr, ty }, e.span())
+            let typ = Box::new(typ);
+            (Expr::DynCast { expr, typ }, e.span())
         },
     );
 

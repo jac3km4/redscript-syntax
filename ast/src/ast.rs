@@ -109,7 +109,7 @@ impl<'src, K: AstKind> Item<'src, K> {
 
 #[derive_where(Debug, PartialEq)]
 pub struct Aggregate<'src, K: AstKind = Identity> {
-    pub name: &'src str,
+    pub name: K::Inner<&'src str>,
     pub type_params: Box<[TypeParam<'src, K>]>,
     pub extends: Option<Box<TypeT<'src, K>>>,
     pub items: Box<[ItemDeclT<'src, K>]>,
@@ -117,7 +117,7 @@ pub struct Aggregate<'src, K: AstKind = Identity> {
 
 impl<'src, K: AstKind> Aggregate<'src, K> {
     pub fn new(
-        name: &'src str,
+        name: K::Inner<&'src str>,
         type_params: impl Into<Box<[TypeParam<'src, K>]>>,
         extends: Option<Box<TypeT<'src, K>>>,
         items: impl Into<Box<[ItemDeclT<'src, K>]>>,
@@ -132,14 +132,14 @@ impl<'src, K: AstKind> Aggregate<'src, K> {
 
     pub fn unwrapped(self) -> Aggregate<'src> {
         Aggregate {
-            name: self.name,
+            name: self.name.into_wrapped(),
             type_params: self
                 .type_params
                 .into_vec()
                 .into_iter()
                 .map(|p| p.into_wrapped().unwrapped())
                 .collect(),
-            extends: self.extends.map(|ty| (*ty).into_wrapped().into()),
+            extends: self.extends.map(|typ| (*typ).into_wrapped().into()),
             items: self
                 .items
                 .into_vec()
@@ -152,24 +152,24 @@ impl<'src, K: AstKind> Aggregate<'src, K> {
 
 #[derive_where(Debug, PartialEq)]
 pub struct Field<'src, K: AstKind = Identity> {
-    pub name: &'src str,
-    pub ty: Box<TypeT<'src, K>>,
+    pub name: K::Inner<&'src str>,
+    pub typ: Box<TypeT<'src, K>>,
     pub default: Option<Box<ExprT<'src, K>>>,
 }
 
 impl<'src, K: AstKind> Field<'src, K> {
     pub fn new(
-        name: &'src str,
-        ty: Box<TypeT<'src, K>>,
+        name: K::Inner<&'src str>,
+        typ: Box<TypeT<'src, K>>,
         default: Option<Box<ExprT<'src, K>>>,
     ) -> Self {
-        Self { name, ty, default }
+        Self { name, typ, default }
     }
 
     pub fn unwrapped(self) -> Field<'src> {
         Field {
-            name: self.name,
-            ty: (*self.ty).into_wrapped().into(),
+            name: self.name.into_wrapped(),
+            typ: (*self.typ).into_wrapped().into(),
             default: self.default.map(|d| (*d).into_wrapped().unwrapped().into()),
         }
     }
@@ -177,7 +177,7 @@ impl<'src, K: AstKind> Field<'src, K> {
 
 #[derive_where(Debug, PartialEq)]
 pub struct Function<'src, K: AstKind = Identity> {
-    pub name: &'src str,
+    pub name: K::Inner<&'src str>,
     pub type_params: Box<[TypeParam<'src, K>]>,
     pub params: Box<[ParamT<'src, K>]>,
     pub return_ty: Option<Box<TypeT<'src, K>>>,
@@ -186,7 +186,7 @@ pub struct Function<'src, K: AstKind = Identity> {
 
 impl<'src, K: AstKind> Function<'src, K> {
     pub fn new(
-        name: &'src str,
+        name: K::Inner<&'src str>,
         type_params: impl Into<Box<[TypeParam<'src, K>]>>,
         params: impl Into<Box<[ParamT<'src, K>]>>,
         return_ty: Option<Box<TypeT<'src, K>>>,
@@ -203,7 +203,7 @@ impl<'src, K: AstKind> Function<'src, K> {
 
     pub fn unwrapped(self) -> Function<'src> {
         Function {
-            name: self.name,
+            name: self.name.into_wrapped(),
             params: self
                 .params
                 .into_vec()
@@ -216,7 +216,7 @@ impl<'src, K: AstKind> Function<'src, K> {
                 .into_iter()
                 .map(|p| p.into_wrapped().unwrapped())
                 .collect(),
-            return_ty: self.return_ty.map(|ty| (*ty).into_wrapped().into()),
+            return_ty: self.return_ty.map(|typ| (*typ).into_wrapped().into()),
             body: self.body.map(|b| b.into_wrapped().unwrapped()),
         }
     }
@@ -239,12 +239,15 @@ impl<'src, K: AstKind> FunctionBody<'src, K> {
 
 #[derive_where(Debug, PartialEq)]
 pub struct Enum<'src, K: AstKind = Identity> {
-    pub name: &'src str,
+    pub name: K::Inner<&'src str>,
     pub variants: Box<[K::Inner<EnumVariant<'src>>]>,
 }
 
 impl<'src, K: AstKind> Enum<'src, K> {
-    pub fn new(name: &'src str, variants: impl Into<Box<[K::Inner<EnumVariant<'src>>]>>) -> Self {
+    pub fn new(
+        name: K::Inner<&'src str>,
+        variants: impl Into<Box<[K::Inner<EnumVariant<'src>>]>>,
+    ) -> Self {
         Self {
             name,
             variants: variants.into(),
@@ -253,7 +256,7 @@ impl<'src, K: AstKind> Enum<'src, K> {
 
     pub fn unwrapped(self) -> Enum<'src> {
         Enum {
-            name: self.name,
+            name: self.name.into_wrapped(),
             variants: self
                 .variants
                 .into_vec()
@@ -322,14 +325,14 @@ impl<'src> Type<'src> {
 #[derive_where(Debug, PartialEq)]
 pub struct TypeParam<'src, K: AstKind = Identity> {
     pub variance: Variance,
-    pub name: &'src str,
+    pub name: K::Inner<&'src str>,
     pub upper_bound: Option<Box<TypeT<'src, K>>>,
 }
 
 impl<'src, K: AstKind> TypeParam<'src, K> {
     pub fn new(
         variance: Variance,
-        name: &'src str,
+        name: K::Inner<&'src str>,
         upper_bound: Option<Box<TypeT<'src, K>>>,
     ) -> Self {
         Self {
@@ -342,8 +345,8 @@ impl<'src, K: AstKind> TypeParam<'src, K> {
     pub fn unwrapped(self) -> TypeParam<'src> {
         TypeParam {
             variance: self.variance,
-            name: self.name,
-            upper_bound: self.upper_bound.map(|ty| (*ty).into_wrapped().into()),
+            name: self.name.into_wrapped(),
+            upper_bound: self.upper_bound.map(|typ| (*typ).into_wrapped().into()),
         }
     }
 }
@@ -358,15 +361,15 @@ pub enum Variance {
 #[derive_where(Debug, PartialEq)]
 pub struct Param<'src, K: AstKind = Identity> {
     pub name: &'src str,
-    pub ty: Option<TypeT<'src, K>>,
+    pub typ: Option<TypeT<'src, K>>,
     pub qualifiers: ParamQualifiers,
 }
 
 impl<'src, K: AstKind> Param<'src, K> {
-    pub fn new(name: &'src str, ty: Option<TypeT<'src, K>>, qualifiers: ParamQualifiers) -> Self {
+    pub fn new(name: &'src str, typ: Option<TypeT<'src, K>>, qualifiers: ParamQualifiers) -> Self {
         Self {
             name,
-            ty,
+            typ,
             qualifiers,
         }
     }
@@ -374,7 +377,7 @@ impl<'src, K: AstKind> Param<'src, K> {
     pub fn unwrapped(self) -> Param<'src> {
         Param {
             name: self.name,
-            ty: self.ty.map(Wrapper::into_wrapped),
+            typ: self.typ.map(Wrapper::into_wrapped),
             qualifiers: self.qualifiers,
         }
     }
@@ -426,8 +429,8 @@ impl<'src, K: AstKind> Block<'src, K> {
 #[derive_where(Debug, PartialEq)]
 pub enum Stmt<'src, K: AstKind = Identity> {
     Let {
-        name: &'src str,
-        ty: Option<Box<TypeT<'src, K>>>,
+        name: K::Inner<&'src str>,
+        typ: Option<Box<TypeT<'src, K>>>,
         value: Option<Box<ExprT<'src, K>>>,
     },
     Switch {
@@ -441,21 +444,22 @@ pub enum Stmt<'src, K: AstKind = Identity> {
     },
     While(Box<ConditionalBlock<'src, K>>),
     ForIn {
-        name: &'src str,
+        name: K::Inner<&'src str>,
         iter: Box<ExprT<'src, K>>,
         body: Block<'src, K>,
     },
     Return(Option<Box<ExprT<'src, K>>>),
     Break,
+    Continue,
     Expr(Box<ExprT<'src, K>>),
 }
 
 impl<'src, K: AstKind> Stmt<'src, K> {
     pub fn unwrapped(self) -> Stmt<'src> {
         match self {
-            Stmt::Let { name, ty, value } => Stmt::Let {
-                name,
-                ty: ty.map(|ty| (*ty).into_wrapped().into()),
+            Stmt::Let { name, typ, value } => Stmt::Let {
+                name: name.into_wrapped(),
+                typ: typ.map(|typ| (*typ).into_wrapped().into()),
                 value: value.map(|v| (*v).into_wrapped().unwrapped().into()),
             },
             Stmt::Switch {
@@ -486,12 +490,13 @@ impl<'src, K: AstKind> Stmt<'src, K> {
             },
             Stmt::While(block) => Stmt::While(block.into_wrapped().unwrapped().into()),
             Stmt::ForIn { name, iter, body } => Stmt::ForIn {
-                name,
+                name: name.into_wrapped(),
                 iter: (*iter).into_wrapped().unwrapped().into(),
                 body: body.into_wrapped().unwrapped(),
             },
             Stmt::Return(v) => Stmt::Return(v.map(|v| (*v).into_wrapped().unwrapped().into())),
             Stmt::Break => Stmt::Break,
+            Stmt::Continue => Stmt::Continue,
             Stmt::Expr(e) => Stmt::Expr((*e).into_wrapped().unwrapped().into()),
         }
     }
@@ -577,10 +582,10 @@ pub enum Expr<'src, K: AstKind = Identity> {
     },
     DynCast {
         expr: Box<ExprT<'src, K>>,
-        ty: Box<TypeT<'src, K>>,
+        typ: Box<TypeT<'src, K>>,
     },
     New {
-        ty: Box<TypeT<'src, K>>,
+        typ: Box<TypeT<'src, K>>,
         args: Box<[ExprT<'src, K>]>,
     },
     Conditional {
@@ -655,12 +660,12 @@ impl<'src, K: AstKind> Expr<'src, K> {
                 expr: (*expr).into_wrapped().unwrapped().into(),
                 index: (*index).into_wrapped().unwrapped().into(),
             },
-            Expr::DynCast { expr, ty } => Expr::DynCast {
+            Expr::DynCast { expr, typ } => Expr::DynCast {
                 expr: (*expr).into_wrapped().unwrapped().into(),
-                ty: (*ty).into_wrapped().into(),
+                typ: (*typ).into_wrapped().into(),
             },
-            Expr::New { ty, args } => Expr::New {
-                ty: (*ty).into_wrapped().into(),
+            Expr::New { typ, args } => Expr::New {
+                typ: (*typ).into_wrapped().into(),
                 args: args
                     .into_vec()
                     .into_iter()

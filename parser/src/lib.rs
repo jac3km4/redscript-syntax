@@ -34,8 +34,7 @@ pub fn parse_item_decl(src: &str, file: FileId) -> ParseResult<SpannedItemDecl<'
     parse!(src, parser::item_decl(), file)
 }
 
-#[allow(unused)]
-fn parse_item(src: &str, file: FileId) -> ParseResult<SpannedItem<'_>> {
+pub fn parse_item(src: &str, file: FileId) -> ParseResult<SpannedItem<'_>> {
     parse!(src, parser::item(), file)
 }
 

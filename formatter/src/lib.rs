@@ -150,7 +150,7 @@ impl Formattable for Import<'_> {
 
 impl<K: AstKind> Formattable for Aggregate<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
-        write!(f, "{}", self.name)?;
+        write!(f, "{}", self.name.as_wrapped())?;
         if !self.type_params.is_empty() {
             write!(
                 f,
@@ -172,8 +172,8 @@ impl<K: AstKind> Formattable for Field<'_, K> {
         write!(
             f,
             "let {}: {}",
-            self.name,
-            (*self.ty).as_wrapped().as_fmt(ctx)
+            self.name.as_wrapped(),
+            (*self.typ).as_wrapped().as_fmt(ctx)
         )?;
         if let Some(value) = &self.default {
             write!(f, " = {}", (**value).as_wrapped().as_fmt(ctx))?;
@@ -184,7 +184,7 @@ impl<K: AstKind> Formattable for Field<'_, K> {
 
 impl<K: AstKind> Formattable for Function<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
-        write!(f, "func {}", self.name)?;
+        write!(f, "func {}", self.name.as_wrapped())?;
         if !self.type_params.is_empty() {
             write!(
                 f,
@@ -197,8 +197,8 @@ impl<K: AstKind> Formattable for Function<'_, K> {
             "({}) ",
             SepByMultiline(self.params.iter().map(Wrapper::as_wrapped), ", ", ctx)
         )?;
-        if let Some(ty) = &self.return_ty {
-            write!(f, "-> {} ", (**ty).as_wrapped().as_fmt(ctx))?;
+        if let Some(typ) = &self.return_ty {
+            write!(f, "-> {} ", (**typ).as_wrapped().as_fmt(ctx))?;
         }
         match &self.body {
             Some(FunctionBody::Block(block)) => write!(f, "{}", block.as_fmt(ctx)),
@@ -212,7 +212,7 @@ impl<K: AstKind> Formattable for Function<'_, K> {
 
 impl<K: AstKind> Formattable for Enum<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
-        writeln!(f, "enum {} {{", self.name)?;
+        writeln!(f, "enum {} {{", self.name.as_wrapped())?;
         for variant in &self.variants[..] {
             let ctx = ctx.bump(1);
             writeln!(f, "{}{},", ctx.ws(), variant.as_wrapped().as_fmt(ctx))?;
@@ -242,10 +242,10 @@ impl<K: AstKind> Formattable for Block<'_, K> {
 impl<K: AstKind> Formattable for Stmt<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         match self {
-            Stmt::Let { name, ty, value } => {
-                write!(f, "{}let {name}", ctx.ws())?;
-                if let Some(ty) = ty {
-                    write!(f, ": {}", (**ty).as_wrapped().as_fmt(ctx))?;
+            Stmt::Let { name, typ, value } => {
+                write!(f, "{}let {}", ctx.ws(), name.as_wrapped())?;
+                if let Some(typ) = typ {
+                    write!(f, ": {}", (**typ).as_wrapped().as_fmt(ctx))?;
                 }
                 if let Some(value) = value {
                     write!(f, " = {}", (**value).as_wrapped().as_fmt(ctx))?;
@@ -322,7 +322,7 @@ impl<K: AstKind> Formattable for Stmt<'_, K> {
                     f,
                     "{}for {} in {} ",
                     ctx.ws(),
-                    name,
+                    name.as_wrapped(),
                     (**iter).as_wrapped().as_fmt(ctx)
                 )?;
                 write!(f, "{}", body.as_fmt(ctx))
@@ -340,6 +340,9 @@ impl<K: AstKind> Formattable for Stmt<'_, K> {
             }
             Stmt::Break => {
                 write!(f, "{}break;", ctx.ws())
+            }
+            Stmt::Continue => {
+                write!(f, "{}continue;", ctx.ws())
             }
             Stmt::Expr(expr) => write!(f, "{}{};", ctx.ws(), (**expr).as_wrapped().as_fmt(ctx)),
         }
@@ -447,23 +450,23 @@ impl<K: AstKind> Formattable for Expr<'_, K> {
                     (**index).as_wrapped().as_fmt(ctx.without_parent_op())
                 )
             }
-            Expr::DynCast { expr, ty } => {
+            Expr::DynCast { expr, typ } => {
                 let parenthesize = matches!(ctx.parent, Some(ParentOp::TopPrec | ParentOp::Unary));
                 let ctx = ctx.with_parent_op(ParentOp::Unary);
                 let expr = (**expr).as_wrapped().as_fmt(ctx);
-                let ty = (**ty).as_wrapped().as_fmt(ctx);
+                let typ = (**typ).as_wrapped().as_fmt(ctx);
                 if parenthesize {
-                    write!(f, "({} as {})", expr, ty)
+                    write!(f, "({} as {})", expr, typ)
                 } else {
-                    write!(f, "{} as {}", expr, ty)
+                    write!(f, "{} as {}", expr, typ)
                 }
             }
-            Expr::New { ty, args } => {
+            Expr::New { typ, args } => {
                 let ctx = ctx.without_parent_op();
                 write!(
                     f,
                     "new {}({})",
-                    (**ty).as_wrapped().as_fmt(ctx),
+                    (**typ).as_wrapped().as_fmt(ctx),
                     SepByMultiline(args.iter().map(Wrapper::as_wrapped), ", ", ctx)
                 )
             }
@@ -523,8 +526,8 @@ impl<K: AstKind> Formattable for Param<'_, K> {
         if self.qualifiers.contains(ParamQualifiers::CONST) {
             write!(f, "const ")?;
         };
-        if let Some(ty) = &self.ty {
-            write!(f, "{}: {}", self.name, ty.as_wrapped().as_fmt(ctx))
+        if let Some(typ) = &self.typ {
+            write!(f, "{}: {}", self.name, typ.as_wrapped().as_fmt(ctx))
         } else {
             write!(f, "{}", self.name)
         }
@@ -655,7 +658,7 @@ impl Formattable for Visibility {
 
 impl<K: AstKind> Formattable for TypeParam<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
-        write!(f, "{}{}", self.variance.as_fmt(ctx), self.name)?;
+        write!(f, "{}{}", self.variance.as_fmt(ctx), self.name.as_wrapped())?;
         if let Some(upper_bound) = &self.upper_bound {
             write!(f, " extends {}", (**upper_bound).as_wrapped().as_fmt(ctx))?;
         }
@@ -1063,11 +1066,11 @@ where
             Expr::Index { expr, index } => {
                 (**expr).as_wrapped().approx_width() + (**index).as_wrapped().approx_width() + 2
             }
-            Expr::DynCast { expr, ty } => {
-                (**expr).as_wrapped().approx_width() + (**ty).as_wrapped().approx_width() + 4
+            Expr::DynCast { expr, typ } => {
+                (**expr).as_wrapped().approx_width() + (**typ).as_wrapped().approx_width() + 4
             }
-            Expr::New { ty, args } => {
-                (**ty).as_wrapped().approx_width()
+            Expr::New { typ, args } => {
+                (**typ).as_wrapped().approx_width()
                     + args
                         .iter()
                         .map(|arg| arg.as_wrapped().approx_width() + 2)
@@ -1111,9 +1114,9 @@ impl<K: AstKind> ApproxWidth for Param<'_, K> {
     fn approx_width(&self) -> u16 {
         self.name.len() as u16
             + self
-                .ty
+                .typ
                 .as_ref()
-                .map(|ty| ty.as_wrapped().approx_width())
+                .map(|typ| typ.as_wrapped().approx_width())
                 .unwrap_or_default()
             + 2
     }

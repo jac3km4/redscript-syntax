@@ -3,16 +3,16 @@ use std::iter;
 use crate::{lexer::Token, parser_input};
 use chumsky::prelude::*;
 use redscript_ast::{
-    Assoc, BinOp, Constant, Expr, FunctionBody, Param, Span, SpannedBlock, SpannedExpr, StrPart,
+    Assoc, BinOp, Constant, Expr, FunctionBody, Param, SourceBlock, SourceExpr, Span, StrPart,
     Type, UnOp,
 };
 
 use super::{ident, type_with_span, Parse};
 
 pub fn expr_with_span_rec<'tok, 'src: 'tok>(
-    expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
-    block: impl Parse<'tok, 'src, SpannedBlock<'src>>,
-) -> impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)> {
+    expr: impl Parse<'tok, 'src, (SourceExpr<'src>, Span)>,
+    block: impl Parse<'tok, 'src, SourceBlock<'src>>,
+) -> impl Parse<'tok, 'src, (SourceExpr<'src>, Span)> {
     expr_with_span_internal(expr, block)
         // handle trailing period explicitly because it's a common error
         .then(just(Token::Period).or_not())
@@ -25,9 +25,9 @@ pub fn expr_with_span_rec<'tok, 'src: 'tok>(
 }
 
 fn expr_with_span_internal<'tok, 'src: 'tok>(
-    expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
-    block: impl Parse<'tok, 'src, SpannedBlock<'src>>,
-) -> impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)> {
+    expr: impl Parse<'tok, 'src, (SourceExpr<'src>, Span)>,
+    block: impl Parse<'tok, 'src, SourceBlock<'src>>,
+) -> impl Parse<'tok, 'src, (SourceExpr<'src>, Span)> {
     let value = select! {
         Token::Null => Expr::Null,
         Token::This => Expr::This,
@@ -257,12 +257,12 @@ fn expr_with_span_internal<'tok, 'src: 'tok>(
 }
 
 fn climb_prec<'src, I>(
-    mut lhs: (SpannedExpr<'src>, Span),
+    mut lhs: (SourceExpr<'src>, Span),
     it: &mut iter::Peekable<I>,
     min_prec: u8,
-) -> (SpannedExpr<'src>, Span)
+) -> (SourceExpr<'src>, Span)
 where
-    I: Iterator<Item = (BinOp, (SpannedExpr<'src>, Span))>,
+    I: Iterator<Item = (BinOp, (SourceExpr<'src>, Span))>,
 {
     while let Some((op, mut rhs)) = it.next_if(|(op, _)| op.precedence() >= min_prec) {
         while let Some((lookahead, _)) = it.peek() {
@@ -290,8 +290,8 @@ where
 
 #[derive(Debug)]
 enum TopPrecedence<'src> {
-    Call(Box<[(Type<'src>, Span)]>, Box<[(SpannedExpr<'src>, Span)]>),
-    ArrayAccess(Box<(SpannedExpr<'src>, Span)>),
+    Call(Box<[(Type<'src>, Span)]>, Box<[(SourceExpr<'src>, Span)]>),
+    ArrayAccess(Box<(SourceExpr<'src>, Span)>),
     MemberAccess(&'src str),
 }
 

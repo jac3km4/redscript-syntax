@@ -4,18 +4,18 @@ use crate::lexer::Token;
 use chumsky::{container::Container, prelude::*};
 use redscript_ast::{
     Aggregate, Annotation, Enum, EnumVariant, Field, Function, FunctionBody, Import, Item,
-    ItemDecl, ItemQualifiers, Param, ParamQualifiers, Path, Span, SpannedAnnotation, SpannedBlock,
-    SpannedEnum, SpannedExpr, SpannedField, SpannedFunction, SpannedItem, SpannedItemDecl,
+    ItemDecl, ItemQualifiers, Param, ParamQualifiers, Path, SourceAnnotation, SourceBlock,
+    SourceEnum, SourceExpr, SourceField, SourceFunction, SourceItem, SourceItemDecl, Span,
     Visibility,
 };
 
 use super::{ident, ident_with_span, type_params, type_with_span, Parse};
 
 pub fn item_decl_rec<'tok, 'src: 'tok>(
-    item_decl: impl Parse<'tok, 'src, SpannedItemDecl<'src>>,
-    block: impl Parse<'tok, 'src, SpannedBlock<'src>>,
-    expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
-) -> impl Parse<'tok, 'src, SpannedItemDecl<'src>> {
+    item_decl: impl Parse<'tok, 'src, SourceItemDecl<'src>>,
+    block: impl Parse<'tok, 'src, SourceBlock<'src>>,
+    expr: impl Parse<'tok, 'src, (SourceExpr<'src>, Span)>,
+) -> impl Parse<'tok, 'src, SourceItemDecl<'src>> {
     annotation(expr.clone())
         .map_with(|a, e| (a, e.span()))
         .repeated()
@@ -30,10 +30,10 @@ pub fn item_decl_rec<'tok, 'src: 'tok>(
 }
 
 pub fn item_rec<'tok, 'src: 'tok>(
-    item_decl: impl Parse<'tok, 'src, SpannedItemDecl<'src>>,
-    block: impl Parse<'tok, 'src, SpannedBlock<'src>>,
-    expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
-) -> impl Parse<'tok, 'src, SpannedItem<'src>> {
+    item_decl: impl Parse<'tok, 'src, SourceItemDecl<'src>>,
+    block: impl Parse<'tok, 'src, SourceBlock<'src>>,
+    expr: impl Parse<'tok, 'src, (SourceExpr<'src>, Span)>,
+) -> impl Parse<'tok, 'src, SourceItem<'src>> {
     choice((
         import().map(Item::Import),
         aggregate(item_decl),
@@ -45,9 +45,9 @@ pub fn item_rec<'tok, 'src: 'tok>(
 }
 
 fn function<'tok, 'src: 'tok>(
-    block: impl Parse<'tok, 'src, SpannedBlock<'src>>,
-    expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
-) -> impl Parse<'tok, 'src, SpannedFunction<'src>> {
+    block: impl Parse<'tok, 'src, SourceBlock<'src>>,
+    expr: impl Parse<'tok, 'src, (SourceExpr<'src>, Span)>,
+) -> impl Parse<'tok, 'src, SourceFunction<'src>> {
     let param_qualifiers = select! {
         Token::Ident("opt") => ParamQualifiers::OPTIONAL,
         Token::Ident("out") => ParamQualifiers::OUT,
@@ -96,8 +96,8 @@ fn function<'tok, 'src: 'tok>(
 }
 
 fn field<'tok, 'src: 'tok>(
-    expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
-) -> impl Parse<'tok, 'src, SpannedField<'src>> {
+    expr: impl Parse<'tok, 'src, (SourceExpr<'src>, Span)>,
+) -> impl Parse<'tok, 'src, SourceField<'src>> {
     just(Token::Ident("let"))
         .ignore_then(ident_with_span())
         .then(just(Token::Colon).ignore_then(type_with_span()))
@@ -106,7 +106,7 @@ fn field<'tok, 'src: 'tok>(
         .map(|((name, ty), default)| Field::new(name, ty.into(), default.map(Box::new)))
 }
 
-fn enum_<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedEnum<'src>> {
+fn enum_<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SourceEnum<'src>> {
     let int = select! { Token::Int(i) => i };
 
     let variants = ident()
@@ -125,8 +125,8 @@ fn enum_<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedEnum<'src>> {
 }
 
 fn aggregate<'tok, 'src: 'tok>(
-    item_decl: impl Parse<'tok, 'src, SpannedItemDecl<'src>>,
-) -> impl Parse<'tok, 'src, SpannedItem<'src>> {
+    item_decl: impl Parse<'tok, 'src, SourceItemDecl<'src>>,
+) -> impl Parse<'tok, 'src, SourceItem<'src>> {
     let is_struct = select! {
         Token::Ident("class") => false,
         Token::Ident("struct") => true,
@@ -201,8 +201,8 @@ fn visibility<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Visibility> {
 }
 
 fn annotation<'tok, 'src: 'tok>(
-    expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
-) -> impl Parse<'tok, 'src, SpannedAnnotation<'src>> {
+    expr: impl Parse<'tok, 'src, (SourceExpr<'src>, Span)>,
+) -> impl Parse<'tok, 'src, SourceAnnotation<'src>> {
     just(Token::At)
         .ignore_then(ident())
         .then(

@@ -2,15 +2,15 @@ use std::iter;
 
 use crate::lexer::Token;
 use chumsky::prelude::*;
-use redscript_ast::{Case, ConditionalBlock, Span, SpannedBlock, SpannedExpr, SpannedStmt, Stmt};
+use redscript_ast::{Case, ConditionalBlock, SourceBlock, SourceExpr, SourceStmt, Span, Stmt};
 
 use super::{ident_with_span, type_with_span, Parse};
 
 pub fn stmt_rec<'tok, 'src: 'tok>(
-    expr: impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
-    stmt: impl Parse<'tok, 'src, SpannedStmt<'src>>,
-    block: impl Parse<'tok, 'src, SpannedBlock<'src>>,
-) -> impl Parse<'tok, 'src, SpannedStmt<'src>> {
+    expr: impl Parse<'tok, 'src, (SourceExpr<'src>, Span)>,
+    stmt: impl Parse<'tok, 'src, SourceStmt<'src>>,
+    block: impl Parse<'tok, 'src, SourceBlock<'src>>,
+) -> impl Parse<'tok, 'src, SourceStmt<'src>> {
     let typ = type_with_span();
 
     let semicolon = just(Token::Semicolon).or_not().validate(|semi, ctx, errs| {

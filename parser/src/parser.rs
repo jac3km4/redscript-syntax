@@ -8,8 +8,8 @@ mod stmt;
 use expr::expr_with_span_rec;
 use item::item_rec;
 use redscript_ast::{
-    Block, Expr, FileId, Module, Path, Span, Spanned, SpannedBlock, SpannedExpr, SpannedItem,
-    SpannedItemDecl, SpannedModule, SpannedStmt, SpannedTypeParam, Stmt, Type, TypeParam, Variance,
+    Block, Expr, FileId, Module, Path, SourceBlock, SourceExpr, SourceItem, SourceItemDecl,
+    SourceModule, SourceStmt, SourceTypeParam, Span, Spanned, Stmt, Type, TypeParam, Variance,
 };
 
 use self::{item::item_decl_rec, stmt::stmt_rec};
@@ -29,36 +29,36 @@ impl<'tok, 'src: 'tok, A, P> Parse<'tok, 'src, A> for P where
 }
 
 #[inline]
-pub fn item_decl<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedItemDecl<'src>> {
+pub fn item_decl<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SourceItemDecl<'src>> {
     all_parsers().0
 }
 
 #[inline]
-pub fn item<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedItem<'src>> {
+pub fn item<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SourceItem<'src>> {
     all_parsers().1
 }
 
 #[inline]
-pub fn stmt<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedStmt<'src>> {
+pub fn stmt<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SourceStmt<'src>> {
     block_stmt_expr_parsers().1
 }
 
 #[inline]
-fn expr_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)> {
+fn expr_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, (SourceExpr<'src>, Span)> {
     block_stmt_expr_parsers().2
 }
 
 #[inline]
-pub fn expr<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedExpr<'src>> {
+pub fn expr<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SourceExpr<'src>> {
     expr_with_span().map(|(expr, _)| expr)
 }
 
 pub(super) fn all_parsers<'tok, 'src: 'tok>() -> (
-    impl Parse<'tok, 'src, SpannedItemDecl<'src>>,
-    impl Parse<'tok, 'src, SpannedItem<'src>>,
-    impl Parse<'tok, 'src, SpannedBlock<'src>>,
-    impl Parse<'tok, 'src, SpannedStmt<'src>>,
-    impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
+    impl Parse<'tok, 'src, SourceItemDecl<'src>>,
+    impl Parse<'tok, 'src, SourceItem<'src>>,
+    impl Parse<'tok, 'src, SourceBlock<'src>>,
+    impl Parse<'tok, 'src, SourceStmt<'src>>,
+    impl Parse<'tok, 'src, (SourceExpr<'src>, Span)>,
 ) {
     let mut decl = Recursive::declare();
     let (block, stmt, expr) = block_stmt_expr_parsers();
@@ -73,9 +73,9 @@ pub(super) fn all_parsers<'tok, 'src: 'tok>() -> (
 }
 
 fn block_stmt_expr_parsers<'tok, 'src: 'tok>() -> (
-    impl Parse<'tok, 'src, SpannedBlock<'src>>,
-    impl Parse<'tok, 'src, SpannedStmt<'src>>,
-    impl Parse<'tok, 'src, (SpannedExpr<'src>, Span)>,
+    impl Parse<'tok, 'src, SourceBlock<'src>>,
+    impl Parse<'tok, 'src, SourceStmt<'src>>,
+    impl Parse<'tok, 'src, (SourceExpr<'src>, Span)>,
 ) {
     let mut stmt = Recursive::declare();
     let mut expr = Recursive::declare();
@@ -86,8 +86,8 @@ fn block_stmt_expr_parsers<'tok, 'src: 'tok>() -> (
 }
 
 fn block_rec<'tok, 'src: 'tok>(
-    stmt: impl Parse<'tok, 'src, SpannedStmt<'src>>,
-) -> impl Parse<'tok, 'src, SpannedBlock<'src>> {
+    stmt: impl Parse<'tok, 'src, SourceStmt<'src>>,
+) -> impl Parse<'tok, 'src, SourceBlock<'src>> {
     stmt.map_with(|stmt, e| (stmt, e.span()))
         .repeated()
         .collect::<Vec<_>>()
@@ -105,7 +105,7 @@ fn block_rec<'tok, 'src: 'tok>(
         .labelled("block")
 }
 
-pub fn module<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedModule<'src>> {
+pub fn module<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SourceModule<'src>> {
     just(Token::Ident("module"))
         .ignore_then(
             ident()
@@ -168,7 +168,7 @@ fn type_<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Type<'src>> {
     })
 }
 
-fn type_param<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedTypeParam<'src>> {
+fn type_param<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SourceTypeParam<'src>> {
     let variance = select! {
         Token::Plus => Variance::Covariant,
         Token::Minus => Variance::Contravariant,
@@ -191,7 +191,7 @@ fn type_param<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SpannedTypeParam<'sr
         })
 }
 
-fn type_params<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Vec<SpannedTypeParam<'src>>> {
+fn type_params<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Vec<SourceTypeParam<'src>>> {
     type_param()
         .separated_by(just(Token::Comma))
         .collect::<Vec<_>>()

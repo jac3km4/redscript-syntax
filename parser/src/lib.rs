@@ -7,8 +7,8 @@ use chumsky::prelude::*;
 use lexer::Token;
 use parser::{Parse, ParserInput};
 use redscript_ast::{
-    FileId, SourceMap, Span, Spanned, SpannedExpr, SpannedItem, SpannedItemDecl, SpannedModule,
-    SpannedStmt,
+    FileId, SourceExpr, SourceItem, SourceItemDecl, SourceMap, SourceModule, SourceStmt, Span,
+    Spanned,
 };
 
 pub type ParseResult<A> = (Option<A>, Vec<Error>);
@@ -26,23 +26,23 @@ macro_rules! parse {
     }};
 }
 
-pub fn parse_module(src: &str, file: FileId) -> ParseResult<SpannedModule<'_>> {
+pub fn parse_module(src: &str, file: FileId) -> ParseResult<SourceModule<'_>> {
     parse!(src, parser::module(), file)
 }
 
-pub fn parse_item_decl(src: &str, file: FileId) -> ParseResult<SpannedItemDecl<'_>> {
+pub fn parse_item_decl(src: &str, file: FileId) -> ParseResult<SourceItemDecl<'_>> {
     parse!(src, parser::item_decl(), file)
 }
 
-pub fn parse_item(src: &str, file: FileId) -> ParseResult<SpannedItem<'_>> {
+pub fn parse_item(src: &str, file: FileId) -> ParseResult<SourceItem<'_>> {
     parse!(src, parser::item(), file)
 }
 
-pub fn parse_stmt(src: &str, file: FileId) -> ParseResult<SpannedStmt<'_>> {
+pub fn parse_stmt(src: &str, file: FileId) -> ParseResult<SourceStmt<'_>> {
     parse!(src, parser::stmt(), file)
 }
 
-pub fn parse_expr(src: &str, file: FileId) -> ParseResult<SpannedExpr<'_>> {
+pub fn parse_expr(src: &str, file: FileId) -> ParseResult<SourceExpr<'_>> {
     parse!(src, parser::expr(), file)
 }
 

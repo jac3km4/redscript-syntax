@@ -53,6 +53,15 @@ func Test() {
     FTLog(x);
   }
 
+  switch 1 {
+    case 0:
+      FTLog("f");
+    case 1:
+      FTLog("g");
+    default:
+      FTLog("h");
+  }
+
   for y in [1, 2, 3] {
     FTLog(s"f: \(y)");
   }

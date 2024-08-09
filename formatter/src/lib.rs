@@ -4,8 +4,9 @@ use pretty_dtoa::{dtoa, ftoa, FmtFloatConfig};
 use redscript_ast::{
     Aggregate, Annotation, Assoc, AstKind, AstNode, AstVisitor, BinOp, Block, Constant, Enum,
     EnumVariant, Expr, Field, FileId, Function, FunctionBody, Import, Item, ItemDecl,
-    ItemQualifiers, Module, Never, NodeId, Param, ParamQualifiers, Path, SourceAstNode, Spanned,
-    Stmt, StrPart, Type, TypeParam, UnOp, Variance, Visibility, WithSpan, Wrapper,
+    ItemQualifiers, Module, Never, NodeId, Param, ParamQualifiers, Path, SourceAstNode,
+    SourceBlock, SourceStmt, Span, Spanned, Stmt, StrPart, Type, TypeParam, UnOp, Variance,
+    Visibility, WithSpan, Wrapper,
 };
 use redscript_parser::{lex_with_lf_and_comments, parse, parser, ParseResult, Token};
 
@@ -1286,6 +1287,15 @@ impl<'ctx, 'src> PrefixCollector<'ctx, 'src> {
             tokens,
         }
     }
+
+    fn skip_until(&mut self, span: Span) {
+        while let [(Token::LineFeed, s), rest @ ..] = self.tokens {
+            if s.start > span.start {
+                break;
+            }
+            self.tokens = rest;
+        }
+    }
 }
 
 impl<'ctx, 'src> AstVisitor<'src, WithSpan> for PrefixCollector<'ctx, 'src> {
@@ -1341,19 +1351,21 @@ impl<'ctx, 'src> AstVisitor<'src, WithSpan> for PrefixCollector<'ctx, 'src> {
         Ok(())
     }
 
-    fn visit_block(&mut self, block: &Block<'src, WithSpan>) -> Result<(), Self::Error> {
+    fn visit_block(&mut self, block: &SourceBlock<'src>) -> Result<(), Self::Error> {
         if let Some(block_span) = block.bounds_span() {
-            while let [(Token::LineFeed, span), rest @ ..] = self.tokens {
-                if span.start > block_span.start {
-                    break;
-                }
-                self.tokens = rest;
-            }
+            self.skip_until(block_span);
         };
 
         block
             .stmts
             .iter()
             .try_for_each(|stmt| self.visit_stmt(stmt))
+    }
+
+    fn visit_default(&mut self, stmts: &[Spanned<SourceStmt<'src>>]) -> Result<(), Self::Error> {
+        if let (Some((_, fst)), Some((_, lst))) = (stmts.first(), stmts.last()) {
+            self.skip_until(fst.merge(lst))
+        };
+        stmts.iter().try_for_each(|stmt| self.visit_stmt(stmt))
     }
 }

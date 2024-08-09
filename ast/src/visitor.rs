@@ -78,13 +78,16 @@ pub trait AstVisitor<'src, K: AstKind> {
         cases.iter().try_for_each(|case| self.visit_case(case))?;
         default
             .iter()
-            .flatten()
-            .try_for_each(|stmt| self.visit_stmt(stmt))
+            .try_for_each(|stmts| self.visit_default(stmts))
     }
 
     fn visit_case(&mut self, case: &Case<'src, K>) -> Result<(), Self::Error> {
         self.visit_expr(&case.label)?;
         case.body.iter().try_for_each(|stmt| self.visit_stmt(stmt))
+    }
+
+    fn visit_default(&mut self, stmts: &[StmtT<'src, K>]) -> Result<(), Self::Error> {
+        stmts.iter().try_for_each(|stmt| self.visit_stmt(stmt))
     }
 
     fn visit_if(

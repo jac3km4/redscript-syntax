@@ -1,13 +1,130 @@
-use std::{fmt, mem};
+use std::{collections::HashMap, fmt, mem};
 
 use pretty_dtoa::{dtoa, ftoa, FmtFloatConfig};
 use redscript_ast::{
-    Aggregate, Annotation, Assoc, AstKind, BinOp, Block, Constant, Enum, EnumVariant, Expr, Field,
-    Function, FunctionBody, Import, Item, ItemDecl, ItemQualifiers, Module, Param, ParamQualifiers,
-    Path, Stmt, StrPart, Type, TypeParam, UnOp, Variance, Visibility, Wrapper,
+    Aggregate, Annotation, Assoc, AstKind, AstNode, AstVisitor, BinOp, Block, Constant, Enum,
+    EnumVariant, Expr, Field, FileId, Function, FunctionBody, Import, Item, ItemDecl,
+    ItemQualifiers, Module, Never, NodeId, Param, ParamQualifiers, Path, SourceAstNode, Spanned,
+    Stmt, StrPart, Type, TypeParam, UnOp, Variance, Visibility, WithSpan, Wrapper,
 };
+use redscript_parser::{lex_with_lf_and_comments, parse, parser, ParseResult, Token};
 
-#[derive(Debug, Clone, Copy)]
+pub fn format<'a>(
+    source: &'a str,
+    id: FileId,
+    settings: &'a FormatSettings,
+) -> ParseResult<impl fmt::Display + 'a> {
+    let mut errors = vec![];
+
+    let (tokens, e) = lex_with_lf_and_comments(source, id);
+    errors.extend(e);
+    let Some(tokens) = tokens else {
+        return (None, errors);
+    };
+    let (ws, tokens): (Vec<_>, Vec<_>) =
+        tokens.into_iter().partition(|(t, _)| t.is_ws_or_comment());
+
+    let (module, e) = parse(parser::module(), &tokens, id);
+    errors.extend(e);
+    let Some(module) = module else {
+        return (None, errors);
+    };
+
+    let mut collector = PrefixCollector::new(&ws);
+    collector.visit_module(&module).ok();
+
+    let display = DisplayFn(move |f: &mut fmt::Formatter<'_>| {
+        let ctx = FormatCtx {
+            settings,
+            prefixes: &collector.prefixes,
+            depth: 0,
+            parent: None,
+        };
+        write!(f, "{}", module.as_fmt(ctx))
+    });
+    (Some(display), errors)
+}
+
+#[derive(Debug)]
+pub struct PrefixCollector<'ctx, 'src> {
+    prefixes: HashMap<NodeId, Vec<Prefix<'src>>>,
+    tokens: &'ctx [Spanned<Token<'src>>],
+}
+
+impl<'ctx, 'src> PrefixCollector<'ctx, 'src> {
+    pub fn new(tokens: &'ctx [Spanned<Token<'src>>]) -> Self {
+        Self {
+            prefixes: HashMap::new(),
+            tokens,
+        }
+    }
+}
+
+impl<'ctx, 'src> AstVisitor<'src, WithSpan> for PrefixCollector<'ctx, 'src> {
+    type Error = Never;
+
+    fn visit_node(&mut self, node: SourceAstNode<'_, 'src>) -> Result<(), Self::Error> {
+        let mut prefixes = vec![];
+        let mut is_lf_seq = false;
+        let span = match node {
+            AstNode::ItemDecl((_, s)) | AstNode::Stmt((_, s)) | AstNode::Expr((_, s)) => s,
+        };
+
+        while let [(fst, s), rest @ ..] = self.tokens {
+            if s.start > span.start {
+                break;
+            }
+            match (fst, rest) {
+                // two consecutive line feeds form a line break between statements
+                (Token::LineFeed, [(Token::LineFeed, s), rest @ ..])
+                    if matches!(node, AstNode::Stmt(_)) && s.start <= span.start =>
+                {
+                    is_lf_seq = true;
+                    self.tokens = rest;
+                }
+                _ => {
+                    if is_lf_seq {
+                        prefixes.push(Prefix::LineBreak);
+                        is_lf_seq = false;
+                    }
+                    self.tokens = rest;
+                }
+            }
+            match fst {
+                Token::LineComment(comment) => prefixes.push(Prefix::LineComment(comment)),
+                Token::BlockComment(comment) => prefixes.push(Prefix::BlockComment(comment)),
+                _ => {}
+            }
+        }
+        if is_lf_seq {
+            prefixes.push(Prefix::LineBreak);
+        }
+        if !prefixes.is_empty() {
+            self.prefixes.insert(node.id(), prefixes);
+        }
+        Ok(())
+    }
+
+    fn visit_function(&mut self, function: &Function<'src, WithSpan>) -> Result<(), Self::Error> {
+        match &function.body {
+            Some(FunctionBody::Inline(expr)) => self.visit_expr(expr),
+            Some(FunctionBody::Block(block)) => {
+                self.visit_block(block)?;
+
+                if let Some((fst, _)) = block.stmts.first() {
+                    self.prefixes
+                        .entry(NodeId::stmt(fst))
+                        .or_default()
+                        .retain(|prefix| !matches!(prefix, Prefix::LineBreak));
+                }
+                Ok(())
+            }
+            None => Ok(()),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct FormatSettings {
     pub indent: u16,
     pub max_width: u16,
@@ -33,13 +150,14 @@ impl Default for FormatSettings {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct FormatCtx<'s> {
-    settings: &'s FormatSettings,
+pub struct FormatCtx<'a> {
+    settings: &'a FormatSettings,
+    prefixes: &'a HashMap<NodeId, Vec<Prefix<'a>>>,
     depth: u16,
     parent: Option<ParentOp>,
 }
 
-impl FormatCtx<'_> {
+impl<'s> FormatCtx<'s> {
     fn ws(&self) -> Indent {
         Indent(self.depth * self.settings.indent)
     }
@@ -75,34 +193,36 @@ impl FormatCtx<'_> {
             ..*self
         }
     }
+
+    fn node_prefix(&self, id: NodeId, indent: Option<Indent>) -> impl fmt::Display + '_ {
+        DisplayFn(move |f: &mut fmt::Formatter<'_>| {
+            self.prefixes
+                .get(&id)
+                .map(Vec::as_slice)
+                .unwrap_or_default()
+                .iter()
+                .try_for_each(|prefix| match (prefix, indent) {
+                    (Prefix::LineBreak, _) => writeln!(f),
+                    (
+                        Prefix::LineComment(comment) | Prefix::BlockComment(comment),
+                        Some(indent),
+                    ) => {
+                        writeln!(f, "{indent}{comment}")
+                    }
+                    (Prefix::LineComment(comment), None) => {
+                        // convert line comments to block comments for inline nodes
+                        write!(f, "/*{} */ ", &comment[2..].trim_end())
+                    }
+                    (Prefix::BlockComment(comment), None) => {
+                        write!(f, "{comment} ")
+                    }
+                })
+        })
+    }
 }
 
 pub trait Formattable: Sized {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result;
-
-    fn display(&self, settings: &FormatSettings) -> impl fmt::Display {
-        DisplayProxy(
-            self,
-            FormatCtx {
-                settings,
-                depth: 0,
-                parent: None,
-            },
-        )
-    }
-}
-
-impl<K: AstKind> Formattable for Item<'_, K> {
-    fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
-        match self {
-            Item::Import(import) => write!(f, "{}", import.as_fmt(ctx)),
-            Item::Class(class) => write!(f, "class {}", class.as_fmt(ctx)),
-            Item::Struct(struct_) => write!(f, "struct {}", struct_.as_fmt(ctx)),
-            Item::Function(func) => write!(f, "{}", func.as_fmt(ctx)),
-            Item::Let(field) => write!(f, "{}", field.as_fmt(ctx)),
-            Item::Enum(enum_) => write!(f, "{}", enum_.as_fmt(ctx)),
-        }
-    }
 }
 
 impl<K: AstKind> Formattable for Module<'_, K> {
@@ -117,6 +237,12 @@ impl<K: AstKind> Formattable for Module<'_, K> {
 
 impl<K: AstKind> Formattable for ItemDecl<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            ctx.node_prefix(NodeId::item_decl(self), Some(ctx.ws()))
+        )?;
+
         for ann in &self.annotations[..] {
             writeln!(f, "{}{}", ctx.ws(), ann.as_wrapped().as_fmt(ctx))?;
         }
@@ -130,6 +256,19 @@ impl<K: AstKind> Formattable for ItemDecl<'_, K> {
             self.qualifiers.as_fmt(ctx),
             self.item.as_fmt(ctx)
         )
+    }
+}
+
+impl<K: AstKind> Formattable for Item<'_, K> {
+    fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
+        match self {
+            Item::Import(import) => write!(f, "{}", import.as_fmt(ctx)),
+            Item::Class(class) => write!(f, "class {}", class.as_fmt(ctx)),
+            Item::Struct(struct_) => write!(f, "struct {}", struct_.as_fmt(ctx)),
+            Item::Function(func) => write!(f, "{}", func.as_fmt(ctx)),
+            Item::Let(field) => write!(f, "{}", field.as_fmt(ctx)),
+            Item::Enum(enum_) => write!(f, "{}", enum_.as_fmt(ctx)),
+        }
     }
 }
 
@@ -234,13 +373,17 @@ impl Formattable for EnumVariant<'_> {
 impl<K: AstKind> Formattable for Block<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         writeln!(f, "{{")?;
-        format_stmts(self.stmts.iter().map(Wrapper::as_wrapped), f, ctx.bump(1))?;
+        for stmt in &self.stmts[..] {
+            writeln!(f, "{}", stmt.as_wrapped().as_fmt(ctx.bump(1)))?;
+        }
         write!(f, "{}}}", ctx.ws())
     }
 }
 
 impl<K: AstKind> Formattable for Stmt<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
+        write!(f, "{}", ctx.node_prefix(NodeId::stmt(self), Some(ctx.ws())))?;
+
         match self {
             Stmt::Let { name, typ, value } => {
                 write!(f, "{}let {}", ctx.ws(), name.as_wrapped())?;
@@ -351,6 +494,8 @@ impl<K: AstKind> Formattable for Stmt<'_, K> {
 
 impl<K: AstKind> Formattable for Expr<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
+        write!(f, "{}", ctx.node_prefix(NodeId::expr(self), None))?;
+
         match self {
             Expr::Ident(name) => write!(f, "{name}"),
             Expr::Constant(value) => match (value, ctx.settings.trunc_sig_digits) {
@@ -534,7 +679,7 @@ impl<K: AstKind> Formattable for Param<'_, K> {
     }
 }
 
-impl Formattable for Type<'_> {
+impl<K: AstKind> Formattable for Type<'_, K> {
     fn format(&self, f: &mut fmt::Formatter<'_>, ctx: FormatCtx<'_>) -> fmt::Result {
         match self {
             Type::Named { name, args } if args.is_empty() => write!(f, "{name}"),
@@ -544,8 +689,10 @@ impl Formattable for Type<'_> {
                 name,
                 SepBy(args.iter().map(Wrapper::as_wrapped), ", ", ctx)
             ),
-            Type::Array(el) => write!(f, "[{}]", el.as_wrapped().as_fmt(ctx)),
-            Type::StaticArray(el, size) => write!(f, "[{}; {}]", el.as_wrapped().as_fmt(ctx), size),
+            Type::Array(el) => write!(f, "[{}]", (**el).as_wrapped().as_fmt(ctx)),
+            Type::StaticArray(el, size) => {
+                write!(f, "[{}; {}]", (**el).as_wrapped().as_fmt(ctx), size)
+            }
         }
     }
 }
@@ -685,6 +832,7 @@ impl<A: Formattable> fmt::Display for DisplayProxy<'_, &A> {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 struct Indent(u16);
 
 impl fmt::Display for Indent {
@@ -769,7 +917,7 @@ enum Chain<'ast, 'src, K: AstKind> {
     Member(&'src str),
     Call(
         &'src str,
-        &'ast [K::Inner<Type<'src>>],
+        &'ast [K::Inner<Type<'src, K>>],
         &'ast [K::Inner<Expr<'src, K>>],
     ),
     Op(BinOp, &'ast Expr<'src, K>),
@@ -925,32 +1073,8 @@ fn format_items<'a, 'c: 'a, K: AstKind + 'a>(
     Ok(())
 }
 
-fn format_stmts<'a, 'c: 'a, K: AstKind + 'a>(
-    stmts: impl IntoIterator<Item = &'a Stmt<'c, K>>,
-    f: &mut fmt::Formatter<'_>,
-    ctx: FormatCtx<'_>,
-) -> fmt::Result {
-    let mut it = stmts.into_iter();
-    let Some(first) = it.next() else {
-        return Ok(());
-    };
-    writeln!(f, "{}", first.as_fmt(ctx))?;
-
-    for stmt in it {
-        if matches!(
-            stmt,
-            Stmt::Switch { .. } | Stmt::While { .. } | Stmt::ForIn { .. } | Stmt::Return(_)
-        ) {
-            writeln!(f)?;
-        }
-        writeln!(f, "{}", stmt.as_fmt(ctx))?;
-    }
-
-    Ok(())
-}
-
 fn format_call_args<K: AstKind>(
-    type_args: &[K::Inner<Type<'_>>],
+    type_args: &[K::Inner<Type<'_, K>>],
     args: &[K::Inner<Expr<'_, K>>],
     f: &mut fmt::Formatter<'_>,
     ctx: FormatCtx<'_>,
@@ -1122,7 +1246,7 @@ impl<K: AstKind> ApproxWidth for Param<'_, K> {
     }
 }
 
-impl ApproxWidth for Type<'_> {
+impl<K: AstKind> ApproxWidth for Type<'_, K> {
     fn approx_width(&self) -> u16 {
         match self {
             Type::Named { name, args } if args.is_empty() => name.len() as u16,
@@ -1133,9 +1257,9 @@ impl ApproxWidth for Type<'_> {
                         .map(|arg| arg.as_wrapped().approx_width() + 2)
                         .sum::<u16>()
             }
-            Type::Array(el) => el.as_wrapped().approx_width() + 2,
+            Type::Array(el) => (**el).as_wrapped().approx_width() + 2,
             Type::StaticArray(el, size) => {
-                el.as_wrapped().approx_width() + size.ilog10() as u16 + 4
+                (**el).as_wrapped().approx_width() + size.ilog10() as u16 + 4
             }
         }
     }
@@ -1198,4 +1322,22 @@ impl<K: AstKind> ApproxWidth for Chain<'_, '_, K> {
             Chain::Index(index) => index.as_wrapped().approx_width() + 2,
         }
     }
+}
+
+struct DisplayFn<F>(F);
+
+impl<F> fmt::Display for DisplayFn<F>
+where
+    F: Fn(&mut fmt::Formatter<'_>) -> fmt::Result,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0(f)
+    }
+}
+
+#[derive(Debug)]
+pub enum Prefix<'src> {
+    LineBreak,
+    LineComment(&'src str),
+    BlockComment(&'src str),
 }

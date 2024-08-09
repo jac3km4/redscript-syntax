@@ -3,8 +3,8 @@ use std::iter;
 use crate::{lexer::Token, parser_input};
 use chumsky::prelude::*;
 use redscript_ast::{
-    Assoc, BinOp, Constant, Expr, FunctionBody, Param, SourceBlock, SourceExpr, Span, StrPart,
-    Type, UnOp,
+    Assoc, BinOp, Constant, Expr, FunctionBody, Param, SourceBlock, SourceExpr, SourceType, Span,
+    StrPart, UnOp,
 };
 
 use super::{ident, type_with_span, Parse};
@@ -290,7 +290,10 @@ where
 
 #[derive(Debug)]
 enum TopPrecedence<'src> {
-    Call(Box<[(Type<'src>, Span)]>, Box<[(SourceExpr<'src>, Span)]>),
+    Call(
+        Box<[(SourceType<'src>, Span)]>,
+        Box<[(SourceExpr<'src>, Span)]>,
+    ),
     ArrayAccess(Box<(SourceExpr<'src>, Span)>),
     MemberAccess(&'src str),
 }
@@ -301,7 +304,7 @@ mod tests {
     use crate::parse_expr;
 
     use pretty_assertions::assert_eq;
-    use redscript_ast::FileId;
+    use redscript_ast::{FileId, Type};
 
     #[test]
     fn operators() {

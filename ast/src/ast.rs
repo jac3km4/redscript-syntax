@@ -5,12 +5,12 @@ use derive_where::derive_where;
 
 use crate::Spanned;
 
-type AnnotationT<'src, A> = <A as AstKind>::Inner<Annotation<'src, A>>;
-type ExprT<'src, A> = <A as AstKind>::Inner<Expr<'src, A>>;
-type ItemDeclT<'src, A> = <A as AstKind>::Inner<ItemDecl<'src, A>>;
-type ParamT<'src, A> = <A as AstKind>::Inner<Param<'src, A>>;
-type StmtT<'src, A> = <A as AstKind>::Inner<Stmt<'src, A>>;
-type TypeT<'src, A> = <A as AstKind>::Inner<Type<'src>>;
+pub(super) type AnnotationT<'src, A> = <A as AstKind>::Inner<Annotation<'src, A>>;
+pub(super) type ExprT<'src, A> = <A as AstKind>::Inner<Expr<'src, A>>;
+pub(super) type ItemDeclT<'src, A> = <A as AstKind>::Inner<ItemDecl<'src, A>>;
+pub(super) type ParamT<'src, A> = <A as AstKind>::Inner<Param<'src, A>>;
+pub(super) type StmtT<'src, A> = <A as AstKind>::Inner<Stmt<'src, A>>;
+pub(super) type TypeT<'src, A> = <A as AstKind>::Inner<Type<'src, A>>;
 
 #[derive_where(Debug, PartialEq)]
 pub struct Module<'src, K: AstKind = Identity> {
@@ -36,6 +36,17 @@ impl<'src, K: AstKind> Module<'src, K> {
                 .map(|i| i.into_wrapped().unwrapped())
                 .collect(),
         }
+    }
+}
+
+impl<'src> Module<'src, WithSpan> {
+    pub fn find_at(&self, pos: u32) -> Option<QueryResult<'_, 'src>> {
+        let idx = self
+            .items
+            .binary_search_by(|(_, sp)| sp.compare_pos(pos))
+            .ok()?;
+        let (item, _) = &self.items[idx];
+        Some(item.find_at(pos))
     }
 }
 
@@ -81,6 +92,28 @@ impl<'src, K: AstKind> ItemDecl<'src, K> {
             qualifiers: self.qualifiers,
             item: self.item.into_wrapped().unwrapped(),
         }
+    }
+}
+
+impl<'src> ItemDecl<'src, WithSpan> {
+    pub fn find_at(&self, pos: u32) -> QueryResult<'_, 'src> {
+        match &self.item {
+            Item::Import(_) | Item::Enum(_) => return QueryResult::ItemDecl(self),
+            Item::Class(c) => c.find_at(pos),
+            Item::Struct(s) => s.find_at(pos),
+            Item::Function(f) => {
+                f.params
+                    .iter()
+                    .filter_map(|(p, _)| p.typ.as_ref())
+                    .find_map(|(typ, span)| span.contains(pos).then_some(typ.find_at(pos)));
+                f.body.as_ref().and_then(|b| b.find_at(pos))
+            }
+            Item::Let(l) => l.default.as_ref().and_then(|d| {
+                let (d, span) = &**d;
+                span.contains(pos).then_some(d.find_at(pos))
+            }),
+        }
+        .unwrap_or(QueryResult::ItemDecl(self))
     }
 }
 
@@ -139,7 +172,9 @@ impl<'src, K: AstKind> Aggregate<'src, K> {
                 .into_iter()
                 .map(|p| p.into_wrapped().unwrapped())
                 .collect(),
-            extends: self.extends.map(|typ| (*typ).into_wrapped().into()),
+            extends: self
+                .extends
+                .map(|typ| (*typ).into_wrapped().unwrapped().into()),
             items: self
                 .items
                 .into_vec()
@@ -147,6 +182,17 @@ impl<'src, K: AstKind> Aggregate<'src, K> {
                 .map(|m| m.into_wrapped().unwrapped())
                 .collect(),
         }
+    }
+}
+
+impl<'src> Aggregate<'src, WithSpan> {
+    pub fn find_at(&self, pos: u32) -> Option<QueryResult<'_, 'src>> {
+        let idx = self
+            .items
+            .binary_search_by(|(_, sp)| sp.compare_pos(pos))
+            .ok()?;
+        let (item, _) = &self.items[idx];
+        Some(item.find_at(pos))
     }
 }
 
@@ -169,7 +215,7 @@ impl<'src, K: AstKind> Field<'src, K> {
     pub fn unwrapped(self) -> Field<'src> {
         Field {
             name: self.name.into_wrapped(),
-            typ: (*self.typ).into_wrapped().into(),
+            typ: (*self.typ).into_wrapped().unwrapped().into(),
             default: self.default.map(|d| (*d).into_wrapped().unwrapped().into()),
         }
     }
@@ -216,7 +262,9 @@ impl<'src, K: AstKind> Function<'src, K> {
                 .into_iter()
                 .map(|p| p.into_wrapped().unwrapped())
                 .collect(),
-            return_ty: self.return_ty.map(|typ| (*typ).into_wrapped().into()),
+            return_ty: self
+                .return_ty
+                .map(|typ| (*typ).into_wrapped().unwrapped().into()),
             body: self.body.map(|b| b.into_wrapped().unwrapped()),
         }
     }
@@ -233,6 +281,18 @@ impl<'src, K: AstKind> FunctionBody<'src, K> {
         match self {
             FunctionBody::Block(b) => FunctionBody::Block(b.into_wrapped().unwrapped()),
             FunctionBody::Inline(e) => FunctionBody::Inline((*e).into_wrapped().unwrapped().into()),
+        }
+    }
+}
+
+impl<'src> FunctionBody<'src, WithSpan> {
+    pub fn find_at(&self, pos: u32) -> Option<QueryResult<'_, 'src>> {
+        match self {
+            FunctionBody::Block(b) => b.find_at(pos),
+            FunctionBody::Inline(e) => {
+                let (e, span) = &**e;
+                span.contains(pos).then_some(e.find_at(pos))
+            }
         }
     }
 }
@@ -306,18 +366,56 @@ impl<'src, K: AstKind> Annotation<'src, K> {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub enum Type<'src> {
-    Named { name: &'src str, args: Box<[Self]> },
-    Array(Box<Self>),
-    StaticArray(Box<Self>, usize),
+#[derive_where(Debug, PartialEq)]
+pub enum Type<'src, K: AstKind = Identity> {
+    Named {
+        name: &'src str,
+        args: Box<[K::Inner<Self>]>,
+    },
+    Array(Box<K::Inner<Self>>),
+    StaticArray(Box<K::Inner<Self>>, usize),
 }
 
-impl<'src> Type<'src> {
+impl<'src, K: AstKind> Type<'src, K> {
     pub fn plain(name: &'src str) -> Self {
         Self::Named {
             name,
             args: Box::new([]),
+        }
+    }
+
+    pub fn unwrapped(self) -> Type<'src> {
+        match self {
+            Type::Named { name, args } => Type::Named {
+                name,
+                args: args
+                    .into_vec()
+                    .into_iter()
+                    .map(|a| a.into_wrapped().unwrapped())
+                    .collect(),
+            },
+            Type::Array(t) => Type::Array((*t).into_wrapped().unwrapped().into()),
+            Type::StaticArray(t, size) => {
+                Type::StaticArray((*t).into_wrapped().unwrapped().into(), size)
+            }
+        }
+    }
+}
+
+impl<'src> Type<'src, WithSpan> {
+    pub fn find_at(&self, pos: u32) -> QueryResult<'_, 'src> {
+        match self {
+            Type::Named { args, .. } => args
+                .iter()
+                .find_map(|(typ, span)| span.contains(pos).then_some(typ.find_at(pos)))
+                .unwrap_or(QueryResult::Type(self)),
+            Type::Array(typ) | Type::StaticArray(typ, _) => {
+                let (typ, span) = &**typ;
+                if span.contains(pos) {
+                    return typ.find_at(pos);
+                }
+                QueryResult::Type(self)
+            }
         }
     }
 }
@@ -346,12 +444,14 @@ impl<'src, K: AstKind> TypeParam<'src, K> {
         TypeParam {
             variance: self.variance,
             name: self.name.into_wrapped(),
-            upper_bound: self.upper_bound.map(|typ| (*typ).into_wrapped().into()),
+            upper_bound: self
+                .upper_bound
+                .map(|typ| (*typ).into_wrapped().unwrapped().into()),
         }
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Variance {
     Covariant,
     Contravariant,
@@ -377,7 +477,7 @@ impl<'src, K: AstKind> Param<'src, K> {
     pub fn unwrapped(self) -> Param<'src> {
         Param {
             name: self.name,
-            typ: self.typ.map(Wrapper::into_wrapped),
+            typ: self.typ.map(|t| t.into_wrapped().unwrapped()),
             qualifiers: self.qualifiers,
         }
     }
@@ -426,6 +526,17 @@ impl<'src, K: AstKind> Block<'src, K> {
     }
 }
 
+impl<'src> Block<'src, WithSpan> {
+    pub fn find_at(&self, pos: u32) -> Option<QueryResult<'_, 'src>> {
+        let idx = self
+            .stmts
+            .binary_search_by(|(_, sp)| sp.compare_pos(pos))
+            .ok()?;
+        let (stmt, _) = &self.stmts[idx];
+        Some(stmt.find_at(pos))
+    }
+}
+
 #[derive_where(Debug, PartialEq)]
 pub enum Stmt<'src, K: AstKind = Identity> {
     Let {
@@ -459,7 +570,7 @@ impl<'src, K: AstKind> Stmt<'src, K> {
         match self {
             Stmt::Let { name, typ, value } => Stmt::Let {
                 name: name.into_wrapped(),
-                typ: typ.map(|typ| (*typ).into_wrapped().into()),
+                typ: typ.map(|typ| (*typ).into_wrapped().unwrapped().into()),
                 value: value.map(|v| (*v).into_wrapped().unwrapped().into()),
             },
             Stmt::Switch {
@@ -502,6 +613,67 @@ impl<'src, K: AstKind> Stmt<'src, K> {
     }
 }
 
+impl<'src> Stmt<'src, WithSpan> {
+    pub fn find_at(&self, pos: u32) -> QueryResult<'_, 'src> {
+        let res = match self {
+            Stmt::Break | Stmt::Continue => return QueryResult::Stmt(self),
+            Stmt::Let { value, typ, .. } => {
+                if let Some(typ) = typ {
+                    let (typ, typ_span) = &**typ;
+                    if typ_span.contains(pos) {
+                        return typ.find_at(pos);
+                    }
+                }
+                value.as_ref().and_then(|v| {
+                    let (v, span) = &**v;
+                    span.contains(pos).then_some(v.find_at(pos))
+                })
+            }
+            Stmt::Switch {
+                expr,
+                cases,
+                default,
+            } => {
+                let (expr, span) = &**expr;
+                if span.contains(pos) {
+                    return expr.find_at(pos);
+                }
+                if let Some(res) = cases.iter().find_map(|c| c.find_at(pos)) {
+                    return res;
+                }
+                default.as_deref().and_then(|d| {
+                    d.iter()
+                        .find_map(|(s, span)| span.contains(pos).then_some(s.find_at(pos)))
+                })
+            }
+            Stmt::If { blocks, else_ } => blocks
+                .iter()
+                .find_map(|b| b.find_at(pos))
+                .or_else(|| else_.as_ref().and_then(|e| e.find_at(pos))),
+            Stmt::While(block) => block.find_at(pos),
+            Stmt::ForIn { iter, body, .. } => {
+                let (iter, iter_span) = &**iter;
+                if iter_span.contains(pos) {
+                    return iter.find_at(pos);
+                }
+                body.find_at(pos)
+            }
+            Stmt::Return(v) => v.as_ref().and_then(|v| {
+                let (v, span) = &**v;
+                span.contains(pos).then_some(v.find_at(pos))
+            }),
+            Stmt::Expr(e) => {
+                let (e, span) = &**e;
+                if span.contains(pos) {
+                    return e.find_at(pos);
+                }
+                return QueryResult::Stmt(self);
+            }
+        };
+        res.unwrap_or(QueryResult::Stmt(self))
+    }
+}
+
 #[derive_where(Debug, PartialEq)]
 pub struct ConditionalBlock<'src, K: AstKind = Identity> {
     pub cond: ExprT<'src, K>,
@@ -518,6 +690,16 @@ impl<'src, K: AstKind> ConditionalBlock<'src, K> {
             cond: self.cond.into_wrapped().unwrapped(),
             body: self.body.into_wrapped().unwrapped(),
         }
+    }
+}
+
+impl<'src> ConditionalBlock<'src, WithSpan> {
+    pub fn find_at(&self, pos: u32) -> Option<QueryResult<'_, 'src>> {
+        let (cond, span) = &self.cond;
+        if span.contains(pos) {
+            return Some(cond.find_at(pos));
+        }
+        self.body.find_at(pos)
     }
 }
 
@@ -545,6 +727,18 @@ impl<'src, K: AstKind> Case<'src, K> {
                 .map(|s| s.into_wrapped().unwrapped())
                 .collect(),
         }
+    }
+}
+
+impl<'src> Case<'src, WithSpan> {
+    pub fn find_at(&self, pos: u32) -> Option<QueryResult<'_, 'src>> {
+        let (label, span) = &self.label;
+        if span.contains(pos) {
+            return Some(label.find_at(pos));
+        }
+        self.body
+            .iter()
+            .find_map(|(s, span)| span.contains(pos).then_some(s.find_at(pos)))
     }
 }
 
@@ -644,7 +838,7 @@ impl<'src, K: AstKind> Expr<'src, K> {
                 type_args: type_args
                     .into_vec()
                     .into_iter()
-                    .map(Wrapper::into_wrapped)
+                    .map(|t| t.into_wrapped().unwrapped())
                     .collect(),
                 args: args
                     .into_vec()
@@ -662,10 +856,10 @@ impl<'src, K: AstKind> Expr<'src, K> {
             },
             Expr::DynCast { expr, typ } => Expr::DynCast {
                 expr: (*expr).into_wrapped().unwrapped().into(),
-                typ: (*typ).into_wrapped().into(),
+                typ: (*typ).into_wrapped().unwrapped().into(),
             },
             Expr::New { typ, args } => Expr::New {
-                typ: (*typ).into_wrapped().into(),
+                typ: (*typ).into_wrapped().unwrapped().into(),
                 args: args
                     .into_vec()
                     .into_iter()
@@ -689,6 +883,110 @@ impl<'src, K: AstKind> Expr<'src, K> {
             Expr::Super => Expr::Super,
             Expr::Null => Expr::Null,
             Expr::Error => Expr::Error,
+        }
+    }
+}
+
+impl<'src> Expr<'src, WithSpan> {
+    pub fn find_at(&self, pos: u32) -> QueryResult<'_, 'src> {
+        match self {
+            Expr::Ident(_)
+            | Expr::Constant(_)
+            | Expr::This
+            | Expr::Super
+            | Expr::Null
+            | Expr::Error => QueryResult::Expr(self),
+            Expr::ArrayLit(e) => e
+                .iter()
+                .find_map(|(e, s)| s.contains(pos).then_some(e.find_at(pos)))
+                .unwrap_or(QueryResult::Expr(self)),
+            Expr::InterpolatedString(parts) => parts
+                .iter()
+                .find_map(|p| match p {
+                    StrPart::Expr((e, s)) if s.contains(pos) => Some(e.find_at(pos)),
+                    _ => None,
+                })
+                .unwrap_or(QueryResult::Expr(self)),
+            Expr::BinOp { lhs, rhs, .. }
+            | Expr::Assign { lhs, rhs }
+            | Expr::Index {
+                expr: lhs,
+                index: rhs,
+            } => {
+                let (lhs, lhs_span) = &**lhs;
+                let (rhs, rhs_span) = &**rhs;
+                if lhs_span.contains(pos) {
+                    lhs.find_at(pos)
+                } else if rhs_span.contains(pos) {
+                    rhs.find_at(pos)
+                } else {
+                    QueryResult::Expr(self)
+                }
+            }
+            Expr::UnOp { expr, .. } | Expr::Member { expr, .. } => {
+                let (expr, span) = &**expr;
+                if span.contains(pos) {
+                    expr.find_at(pos)
+                } else {
+                    QueryResult::Expr(self)
+                }
+            }
+            Expr::Call {
+                expr,
+                type_args,
+                args,
+            } => {
+                let (expr, span) = &**expr;
+                if span.contains(pos) {
+                    expr.find_at(pos)
+                } else {
+                    type_args
+                        .iter()
+                        .find_map(|(typ, s)| s.contains(pos).then_some(typ.find_at(pos)))
+                        .or_else(|| {
+                            args.iter()
+                                .find_map(|(a, s)| s.contains(pos).then_some(a.find_at(pos)))
+                        })
+                        .unwrap_or(QueryResult::Expr(self))
+                }
+            }
+            Expr::DynCast { expr, typ, .. } => {
+                let (expr, span) = &**expr;
+                let (typ, typ_span) = &**typ;
+                if span.contains(pos) {
+                    expr.find_at(pos)
+                } else if typ_span.contains(pos) {
+                    typ.find_at(pos)
+                } else {
+                    QueryResult::Expr(self)
+                }
+            }
+            Expr::New { typ, args } => {
+                let (typ, typ_span) = &**typ;
+                if typ_span.contains(pos) {
+                    typ.find_at(pos)
+                } else {
+                    args.iter()
+                        .find_map(|(a, s)| s.contains(pos).then_some(a.find_at(pos)))
+                        .unwrap_or(QueryResult::Expr(self))
+                }
+            }
+            Expr::Conditional { cond, then, else_ } => {
+                let (cond, span) = &**cond;
+                let (then, then_span) = &**then;
+                let (else_, else_span) = &**else_;
+
+                if span.contains(pos) {
+                    cond.find_at(pos)
+                } else if then_span.contains(pos) {
+                    then.find_at(pos)
+                } else if else_span.contains(pos) {
+                    else_.find_at(pos)
+                } else {
+                    QueryResult::Expr(self)
+                }
+            }
+            Expr::Lambda { body, .. } => body.find_at(pos).unwrap_or(QueryResult::Expr(self)),
         }
     }
 }
@@ -893,6 +1191,13 @@ impl<A, B> Wrapper<A> for (A, B) {
     fn into_wrapped(self) -> A {
         self.0
     }
+}
+
+pub enum QueryResult<'a, 'src> {
+    ItemDecl(&'a ItemDecl<'src, WithSpan>),
+    Stmt(&'a Stmt<'src, WithSpan>),
+    Expr(&'a Expr<'src, WithSpan>),
+    Type(&'a Type<'src, WithSpan>),
 }
 
 #[cfg(test)]

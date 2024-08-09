@@ -9,14 +9,16 @@ use expr::expr_with_span_rec;
 use item::item_rec;
 use redscript_ast::{
     Block, Expr, FileId, Module, Path, SourceBlock, SourceExpr, SourceItem, SourceItemDecl,
-    SourceModule, SourceStmt, SourceTypeParam, Span, Spanned, Stmt, Type, TypeParam, Variance,
+    SourceModule, SourceStmt, SourceType, SourceTypeParam, Span, Spanned, Stmt, Type, TypeParam,
+    Variance,
 };
 
 use self::{item::item_decl_rec, stmt::stmt_rec};
 
-pub type ParserInput<'tok, 'src> = SpannedInput<Token<'src>, Span, &'tok [(Token<'src>, Span)]>;
+pub(super) type ParserInput<'tok, 'src> =
+    SpannedInput<Token<'src>, Span, &'tok [(Token<'src>, Span)]>;
 
-pub type ParserExtra<'tok, 'src> = extra::Full<Rich<'tok, Token<'src>, Span>, (), FileId>;
+pub(super) type ParserExtra<'tok, 'src> = extra::Full<Rich<'tok, Token<'src>, Span>, (), FileId>;
 
 pub trait Parse<'tok, 'src: 'tok, A>:
     Parser<'tok, ParserInput<'tok, 'src>, A, ParserExtra<'tok, 'src>> + Clone
@@ -135,13 +137,8 @@ fn ident_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Spanned<&'src s
     ident().map_with(|ident, e| (ident, e.span()))
 }
 
-#[inline]
-fn type_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Spanned<Type<'src>>> {
-    type_().map_with(|ty, e| (ty, e.span()))
-}
-
 #[inline(never)]
-fn type_<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Type<'src>> {
+fn type_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Spanned<SourceType<'src>>> {
     recursive(|this| {
         let array_size = select! {  Token::Int(i) => i };
         choice((
@@ -165,6 +162,7 @@ fn type_<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Type<'src>> {
                 }),
         ))
         .labelled("type")
+        .map_with(|typ, e| (typ, e.span()))
     })
 }
 

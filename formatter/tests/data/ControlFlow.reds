@@ -7,10 +7,13 @@ func Test() {
     && true
     && false {
   } else if false {
+
     FTLog("a");
   } else {
+
     FTLog("b");
   }
+
   if true {
     FTLog("c");
   }
@@ -49,12 +52,14 @@ func Test() {
     "magna",
     "aliqua"
   ] {
+
     FTLog(x);
   }
 
   for y in [1, 2, 3] {
     FTLog(s"f: \(y)");
   }
+
   let f1 = (a) -> a;
   let f2 = (a) -> {
     return a;

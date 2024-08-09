@@ -7,6 +7,23 @@ pub struct Span {
     pub file: FileId,
 }
 
+impl Span {
+    #[inline]
+    pub fn contains(&self, pos: u32) -> bool {
+        self.start <= pos && pos < self.end
+    }
+
+    pub fn compare_pos(&self, pos: u32) -> std::cmp::Ordering {
+        if pos < self.start {
+            std::cmp::Ordering::Less
+        } else if pos >= self.end {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Equal
+        }
+    }
+}
+
 #[cfg(feature = "chumsky")]
 impl From<(FileId, chumsky::span::SimpleSpan)> for Span {
     #[inline]

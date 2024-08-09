@@ -1,10 +1,10 @@
 mod lexer;
-mod parser;
+pub mod parser;
 
 use std::fmt;
 
 use chumsky::prelude::*;
-use lexer::Token;
+pub use lexer::Token;
 use parser::{Parse, ParserInput};
 use redscript_ast::{
     FileId, SourceExpr, SourceItem, SourceItemDecl, SourceMap, SourceModule, SourceStmt, Span,
@@ -46,8 +46,27 @@ pub fn parse_expr(src: &str, file: FileId) -> ParseResult<SourceExpr<'_>> {
     parse!(src, parser::expr(), file)
 }
 
-fn lex(src: &str, f: FileId) -> ParseResult<Vec<Spanned<Token<'_, Span>>>> {
-    let (output, errors) = lexer::lex().parse(src).into_output_errors();
+#[inline]
+pub fn lex(src: &str, f: FileId) -> ParseResult<Vec<Spanned<Token<'_, Span>>>> {
+    lex_internal(src, f, false)
+}
+
+#[inline]
+pub fn lex_with_lf_and_comments(
+    src: &str,
+    f: FileId,
+) -> ParseResult<Vec<Spanned<Token<'_, Span>>>> {
+    lex_internal(src, f, true)
+}
+
+fn lex_internal(
+    src: &str,
+    f: FileId,
+    keep_lf_and_comments: bool,
+) -> ParseResult<Vec<Spanned<Token<'_, Span>>>> {
+    let (output, errors) = lexer::lex(keep_lf_and_comments)
+        .parse(src)
+        .into_output_errors();
     let errors = errors
         .into_iter()
         .map(|err| Error::Lex(err.to_string(), Span::from((f, *err.span()))))
@@ -62,7 +81,7 @@ fn lex(src: &str, f: FileId) -> ParseResult<Vec<Spanned<Token<'_, Span>>>> {
     (Some(output), errors)
 }
 
-fn parse<'tok, 'src: 'tok, A>(
+pub fn parse<'tok, 'src: 'tok, A>(
     parser: impl Parse<'tok, 'src, A>,
     tokens: &'tok [(Token<'src>, Span)],
     file: FileId,

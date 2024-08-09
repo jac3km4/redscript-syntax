@@ -1,16 +1,17 @@
 mod ast;
 mod files;
 mod span;
+mod visitor;
 
-use ast::WithSpan;
 pub use ast::{
     Aggregate, Annotation, Assoc, AstKind, BinOp, Block, Case, ConditionalBlock, Constant, Enum,
     EnumVariant, Expr, Field, Function, FunctionBody, Import, Item, ItemDecl, ItemQualifiers,
     Module, Param, ParamQualifiers, Path, Stmt, StrPart, Type, TypeParam, UnOp, Variance,
-    Visibility, Wrapper,
+    Visibility, WithSpan, Wrapper,
 };
 pub use files::{File, SourceMap};
 pub use span::{FileId, Span};
+pub use visitor::{AstNode, AstVisitor, Never, NodeId};
 
 pub type Spanned<A> = (A, Span);
 
@@ -28,5 +29,7 @@ pub type SourceItemDecl<'src> = ItemDecl<'src, WithSpan>;
 pub type SourceModule<'src> = Module<'src, WithSpan>;
 pub type SourceParam<'src> = Param<'src, WithSpan>;
 pub type SourceStmt<'src> = Stmt<'src, WithSpan>;
+pub type SourceType<'src> = Type<'src, WithSpan>;
 pub type SourceTypeParam<'src> = TypeParam<'src, WithSpan>;
 pub type SourceFunctionBody<'src> = FunctionBody<'src, WithSpan>;
+pub type SourceAstNode<'a, 'src> = AstNode<'a, 'src, WithSpan>;

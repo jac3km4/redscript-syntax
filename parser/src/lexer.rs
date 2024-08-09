@@ -8,138 +8,154 @@ type LexSpan = SimpleSpan;
 type LexExtra<'src> = extra::Err<Rich<'src, char, LexSpan>>;
 
 pub fn lex<'src>(
+    keep_lf_and_comments: bool,
 ) -> impl Parser<'src, &'src str, Vec<(Token<'src, LexSpan>, LexSpan)>, LexExtra<'src>> + Clone {
-    recursive(|this| {
-        let num = text::int(10)
-            .then(just('.').then(text::digits(10).or_not()).or_not())
-            .to_slice()
-            .then(choice([just("ul"), just("u"), just("l"), just("d")]).or_not())
-            .try_map(|(s, suffix): (&str, _), span| match suffix {
-                Some("ul") => Ok(Token::Ulong(s.parse().map_err(|e| Rich::custom(span, e))?)),
-                Some("u") => Ok(Token::Uint(s.parse().map_err(|e| Rich::custom(span, e))?)),
-                Some("l") => Ok(Token::Long(s.parse().map_err(|e| Rich::custom(span, e))?)),
-                Some("d") => Ok(Token::Double(s.parse().map_err(|e| Rich::custom(span, e))?)),
-                _ if s.contains('.') => {
-                    Ok(Token::Float(s.parse().map_err(|e| Rich::custom(span, e))?))
-                }
-                _ => Ok(Token::Int(s.parse().map_err(|e| Rich::custom(span, e))?)),
-            });
+    let num = text::int(10)
+        .then(just('.').then(text::digits(10).or_not()).or_not())
+        .to_slice()
+        .then(choice([just("ul"), just("u"), just("l"), just("d")]).or_not())
+        .try_map(|(s, suffix): (&str, _), span| match suffix {
+            Some("ul") => Ok(Token::Ulong(s.parse().map_err(|e| Rich::custom(span, e))?)),
+            Some("u") => Ok(Token::Uint(s.parse().map_err(|e| Rich::custom(span, e))?)),
+            Some("l") => Ok(Token::Long(s.parse().map_err(|e| Rich::custom(span, e))?)),
+            Some("d") => Ok(Token::Double(s.parse().map_err(|e| Rich::custom(span, e))?)),
+            _ if s.contains('.') => Ok(Token::Float(s.parse().map_err(|e| Rich::custom(span, e))?)),
+            _ => Ok(Token::Int(s.parse().map_err(|e| Rich::custom(span, e))?)),
+        });
 
-        let unicode_escape = any()
-            .filter(char::is_ascii_hexdigit)
+    let str = one_of("nrt")
+        .or_not()
+        .then(
+            str_elem()
+                .clone()
+                .repeated()
+                .collect::<StrParts<'_>>()
+                .delimited_by(just('"'), just('"')),
+        )
+        .map(|(prefix, parts)| match prefix {
+            Some('n') => Token::CName(parts.str),
+            Some('r') => Token::ResRef(parts.str),
+            Some('t') => Token::TdbId(parts.str),
+            _ => Token::Str(parts.str),
+        });
+
+    let word = text::ascii::ident().map(|str| match str {
+        "true" => Token::True,
+        "false" => Token::False,
+        "null" => Token::Null,
+        "this" => Token::This,
+        "super" => Token::Super,
+        "case" => Token::Case,
+        "default" => Token::Default,
+        other => Token::Ident(other),
+    });
+
+    let line_comment = just("//")
+        .ignored()
+        .then_ignore(any().and_is(just('\n').not()).repeated())
+        .to_slice()
+        .map(Token::LineComment);
+
+    let block_comment = recursive(|comment| {
+        just("/*")
+            .ignored()
+            .then_ignore(
+                comment
+                    .padded()
+                    .or(any().and_is(just("*/").not()).ignored())
+                    .repeated(),
+            )
+            .then_ignore(just("*/"))
+    })
+    .to_slice()
+    .map(Token::BlockComment);
+
+    let comment = line_comment.or(block_comment);
+
+    let tok = if keep_lf_and_comments {
+        recursive(|this| {
+            let lf = text::newline().to(Token::LineFeed);
+            choice((lf, comment, str, interp_str(this), symbol(), num, word))
+                .padded_by(text::inline_whitespace())
+                .recover_with(skip_then_retry_until(any().ignored(), end()))
+                .map_with(|tok, e| (tok, e.span()))
+        })
+    } else {
+        recursive(|this| {
+            choice((str, interp_str(this), symbol(), num, word))
+                .padded_by(comment.padded().repeated())
+                .padded()
+                .recover_with(skip_then_retry_until(any().ignored(), end()))
+                .map_with(|tok, e| (tok, e.span()))
+        })
+    };
+    tok.repeated().collect()
+}
+
+fn str_elem<'src>() -> impl Parser<'src, &'src str, Cow<'src, str>, LexExtra<'src>> + Clone {
+    let unicode_escape = any()
+        .filter(char::is_ascii_hexdigit)
+        .repeated()
+        .at_least(1)
+        .at_most(6)
+        .to_slice()
+        .delimited_by(just('{'), just('}'))
+        .try_map(|str, span| {
+            let n = u32::from_str_radix(str, 16).map_err(|err| Rich::custom(span, err))?;
+            let c = std::char::from_u32(n)
+                .ok_or_else(|| Rich::custom(span, "invalid unicode escape"))?;
+            Ok(Cow::Owned(c.into()))
+        });
+
+    choice((
+        none_of("\"\\")
             .repeated()
             .at_least(1)
-            .at_most(6)
             .to_slice()
-            .delimited_by(just('{'), just('}'))
-            .try_map(|str, span| {
-                let n = u32::from_str_radix(str, 16).map_err(|err| Rich::custom(span, err))?;
-                let c = std::char::from_u32(n)
-                    .ok_or_else(|| Rich::custom(span, "invalid unicode escape"))?;
-                Ok(Cow::Owned(c.into()))
-            });
+            .map(Cow::Borrowed),
+        just('\\').ignore_then(choice((
+            just('n').to("\n".into()),
+            just('r').to("\r".into()),
+            just('t').to("\t".into()),
+            just('\'').to("'".into()),
+            just('"').to("\"".into()),
+            just('\\').to("\\".into()),
+            just('u').ignore_then(unicode_escape),
+        ))),
+    ))
+}
 
-        let str_part = choice((
-            none_of("\"\\")
+fn interp_str<'src>(
+    tok: impl Parser<'src, &'src str, (Token<'src, LexSpan>, LexSpan), LexExtra<'src>> + Clone,
+) -> impl Parser<'src, &'src str, Token<'src, LexSpan>, LexExtra<'src>> + Clone {
+    let balanced_parens = recursive(|p| {
+        just('(')
+            .ignore_then(p.or(any().and_is(just(')').not()).ignored()).repeated())
+            .then_ignore(just(')'))
+    })
+    .to_slice();
+
+    just('s').ignore_then(
+        choice((
+            str_elem()
                 .repeated()
                 .at_least(1)
-                .to_slice()
-                .map(Cow::Borrowed),
-            just('\\').ignore_then(choice((
-                just('n').to("\n".into()),
-                just('r').to("\r".into()),
-                just('t').to("\t".into()),
-                just('\'').to("'".into()),
-                just('"').to("\"".into()),
-                just('\\').to("\\".into()),
-                just('u').ignore_then(unicode_escape),
-            ))),
-        ));
-
-        let str = one_of("nrt")
-            .or_not()
-            .then(
-                str_part
-                    .clone()
-                    .repeated()
-                    .collect::<StrParts<'_>>()
-                    .delimited_by(just('"'), just('"')),
-            )
-            .map(|(prefix, parts)| match prefix {
-                Some('n') => Token::CName(parts.str),
-                Some('r') => Token::ResRef(parts.str),
-                Some('t') => Token::TdbId(parts.str),
-                _ => Token::Str(parts.str),
-            });
-
-        let balanced_parens = recursive(|p| {
-            just('(')
-                .ignore_then(p.or(any().and_is(just(')').not()).ignored()).repeated())
-                .then_ignore(just(')'))
-        })
-        .to_slice();
-
-        let interp_str = just('s')
-            .ignore_then(
-                choice((
-                    str_part
-                        .repeated()
-                        .at_least(1)
-                        .collect::<StrParts<'_>>()
-                        .map(|ps| Token::StrFrag(ps.str)),
-                    just("\\")
-                        .ignore_then(
-                            this.repeated()
-                                .collect::<Vec<_>>()
-                                .nested_in(balanced_parens),
-                        )
-                        .map(|tok| Token::Group(tok.into())),
-                ))
-                .map_with(|tok, e| (tok, e.span()))
-                .repeated()
-                .collect::<Vec<_>>()
-                .delimited_by(just('"'), just('"')),
-            )
-            .map(|ps| Token::InterpStr(ps.into()));
-
-        let word = text::ascii::ident().map(|str| match str {
-            "true" => Token::True,
-            "false" => Token::False,
-            "null" => Token::Null,
-            "this" => Token::This,
-            "super" => Token::Super,
-            "case" => Token::Case,
-            "default" => Token::Default,
-            other => Token::Ident(other),
-        });
-
-        let line_comment = just("//")
-            .ignored()
-            .then_ignore(any().and_is(just('\n').not()).repeated())
-            .padded();
-
-        let block_comment = recursive(|comment| {
-            just("/*")
-                .ignored()
-                .then_ignore(
-                    comment
-                        .or(any().and_is(just("*/").not()).ignored())
-                        .repeated(),
+                .collect::<StrParts<'_>>()
+                .map(|ps| Token::StrFrag(ps.str)),
+            just("\\")
+                .ignore_then(
+                    tok.repeated()
+                        .collect::<Vec<_>>()
+                        .nested_in(balanced_parens),
                 )
-                .then_ignore(just("*/"))
-                .padded()
-        });
-
-        let comment = line_comment.or(block_comment);
-
-        choice((str, interp_str, word, symbol(), num))
-            .padded_by(comment.repeated())
-            .padded()
-            .recover_with(skip_then_retry_until(any().ignored(), end()))
-            .map_with(|tok, e| (tok, e.span()))
-    })
-    .repeated()
-    .collect()
+                .map(|tok| Token::Group(tok.into())),
+        ))
+        .map_with(|tok, e| (tok, e.span()))
+        .repeated()
+        .collect::<Vec<_>>()
+        .delimited_by(just('"'), just('"'))
+        .map(|ps| Token::InterpStr(ps.into())),
+    )
 }
 
 fn symbol<'src>() -> impl Parser<'src, &'src str, Token<'src, LexSpan>, LexExtra<'src>> + Clone {
@@ -215,6 +231,10 @@ pub enum Token<'src, S = Span> {
     StrFrag(Cow<'src, str>),
     InterpStr(Box<[(Self, S)]>),
 
+    LineComment(&'src str),
+    BlockComment(&'src str),
+    LineFeed,
+
     AssignAdd,
     AssignSub,
     AssignMul,
@@ -266,6 +286,14 @@ pub enum Token<'src, S = Span> {
 }
 
 impl<'src, S1> Token<'src, S1> {
+    #[inline]
+    pub fn is_ws_or_comment(&self) -> bool {
+        matches!(
+            self,
+            Self::LineComment(_) | Self::BlockComment(_) | Self::LineFeed
+        )
+    }
+
     pub fn map_span<S2>(self, f: impl Fn(S1) -> S2 + Clone) -> Token<'src, S2> {
         match self {
             Self::Group(s) => Token::Group(
@@ -292,6 +320,9 @@ impl<'src, S1> Token<'src, S1> {
                     .map(|(tok, span)| (tok.map_span(f.clone()), f(span)))
                     .collect(),
             ),
+            Self::LineComment(s) => Token::LineComment(s),
+            Self::BlockComment(s) => Token::BlockComment(s),
+            Self::LineFeed => Token::LineFeed,
             Self::AssignAdd => Token::AssignAdd,
             Self::AssignSub => Token::AssignSub,
             Self::AssignMul => Token::AssignMul,
@@ -344,7 +375,7 @@ impl<'src, S1> Token<'src, S1> {
 impl fmt::Display for Token<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Token::Ident(s) => write!(f, "{}", s),
+            Token::Ident(s) | Token::LineComment(s) | Token::BlockComment(s) => write!(f, "{}", s),
             Token::Int(n) => write!(f, "{}", n),
             Token::Uint(n) => write!(f, "{}u", n),
             Token::Ulong(n) => write!(f, "{}ul", n),
@@ -357,13 +388,14 @@ impl fmt::Display for Token<'_> {
             Token::TdbId(s) => write!(f, "t\"{}\"", s),
             Token::InterpStr(s) => {
                 write!(f, "s\"")?;
-                for (tok, _) in s.iter() {
+                for (tok, _) in s {
                     write!(f, "{}", tok)?;
                 }
                 write!(f, "\"")
             }
+            Token::LineFeed => writeln!(f),
             Token::Group(s) => {
-                for (tok, _) in s.iter() {
+                for (tok, _) in s {
                     write!(f, "\\({})", tok)?;
                 }
                 Ok(())

@@ -1,7 +1,6 @@
 use pretty_assertions::assert_eq;
 use redscript_ast::SourceMap;
-use redscript_formatter::{FormatSettings, Formattable};
-use redscript_parser::parse_module;
+use redscript_formatter::FormatSettings;
 
 #[test]
 fn formatted_files() {
@@ -11,13 +10,12 @@ fn formatted_files() {
         "tests/data/Operators.reds",
     ])
     .unwrap();
+    let settings = FormatSettings::default();
 
     for (id, file) in files.iter() {
-        let (module, errors) = parse_module(file.source(), id);
+        let (module, errors) = redscript_formatter::format(file.source(), id, &settings);
         if let (Some(module), []) = (module, &errors[..]) {
-            let settings = FormatSettings::default();
-            let formatted = module.display(&settings).to_string();
-            assert_eq!(formatted, file.source());
+            assert_eq!(module.to_string(), file.source());
         } else {
             panic!("failed to parse {}: {errors:?}", file.path().display());
         }

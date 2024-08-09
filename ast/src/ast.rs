@@ -3,7 +3,7 @@ use std::{borrow::Cow, fmt};
 use bitflags::bitflags;
 use derive_where::derive_where;
 
-use crate::Spanned;
+use crate::{Span, Spanned};
 
 pub(super) type AnnotationT<'src, A> = <A as AstKind>::Inner<Annotation<'src, A>>;
 pub(super) type ExprT<'src, A> = <A as AstKind>::Inner<Expr<'src, A>>;
@@ -534,6 +534,12 @@ impl<'src> Block<'src, WithSpan> {
             .ok()?;
         let (stmt, _) = &self.stmts[idx];
         Some(stmt.find_at(pos))
+    }
+
+    pub fn bounds_span(&self) -> Option<Span> {
+        let (_, fst) = self.stmts.first()?;
+        let (_, lst) = self.stmts.last()?;
+        Some(fst.merge(lst))
     }
 }
 

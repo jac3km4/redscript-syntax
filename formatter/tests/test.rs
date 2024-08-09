@@ -1,6 +1,6 @@
 use pretty_assertions::assert_eq;
 use redscript_ast::SourceMap;
-use redscript_formatter::FormatSettings;
+use redscript_formatter::{format_document, FormatSettings};
 
 #[test]
 fn formatted_files() {
@@ -11,9 +11,8 @@ fn formatted_files() {
     ])
     .unwrap();
     let settings = FormatSettings::default();
-
     for (id, file) in files.iter() {
-        let (module, errors) = redscript_formatter::format(file.source(), id, &settings);
+        let (module, errors) = format_document(file.source(), id, &settings);
         if let (Some(module), []) = (module, &errors[..]) {
             assert_eq!(module.to_string(), file.source());
         } else {

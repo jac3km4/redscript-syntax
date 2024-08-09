@@ -3,7 +3,7 @@ use std::{fs::File, path::PathBuf};
 
 use argh::FromArgs;
 use redscript_ast::SourceMap;
-use redscript_formatter::FormatSettings;
+use redscript_formatter::{format_document, FormatSettings};
 
 #[derive(FromArgs)]
 /// Redscript formatter CLI
@@ -52,7 +52,7 @@ fn main() -> anyhow::Result<()> {
     let mut errors = vec![];
 
     for (id, file) in map.iter() {
-        let (module, e) = redscript_formatter::format(file.source(), id, &settings);
+        let (module, e) = format_document(file.source(), id, &settings);
         errors.extend(e);
         let Some(module) = module else {
             continue;

@@ -22,6 +22,15 @@ impl Span {
             std::cmp::Ordering::Equal
         }
     }
+
+    pub fn merge(&self, other: &Self) -> Self {
+        assert_eq!(self.file, other.file);
+        Self {
+            start: self.start.min(other.start),
+            end: self.end.max(other.end),
+            file: self.file,
+        }
+    }
 }
 
 #[cfg(feature = "chumsky")]

@@ -3,7 +3,8 @@ use std::ptr;
 use crate::{
     ast::{ExprT, ItemDeclT, ParamT, StmtT, TypeT},
     Aggregate, AstKind, BinOp, Block, Case, ConditionalBlock, Constant, Enum, Expr, Field,
-    Function, FunctionBody, Import, Item, ItemDecl, Module, Stmt, StrPart, UnOp, Wrapper,
+    Function, FunctionBody, Import, Item, ItemDecl, Module, Span, Stmt, StrPart, UnOp, WithSpan,
+    Wrapper,
 };
 
 #[derive(Debug)]
@@ -12,6 +13,7 @@ pub enum Never {}
 pub trait AstVisitor<'src, K: AstKind> {
     type Error;
 
+    #[inline]
     fn visit_import(&mut self, _import: &Import<'src>) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -45,6 +47,7 @@ pub trait AstVisitor<'src, K: AstKind> {
             .try_for_each(|value| self.visit_expr(value))
     }
 
+    #[inline]
     fn visit_enum(&mut self, _enum_: &Enum<'src, K>) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -115,18 +118,22 @@ pub trait AstVisitor<'src, K: AstKind> {
         expr.iter().try_for_each(|expr| self.visit_expr(expr))
     }
 
+    #[inline]
     fn visit_break(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }
 
+    #[inline]
     fn visit_continue(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }
 
+    #[inline]
     fn visit_ident(&mut self, _ident: &'src str) -> Result<(), Self::Error> {
         Ok(())
     }
 
+    #[inline]
     fn visit_constant(&mut self, _value: &Constant<'src>) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -235,14 +242,17 @@ pub trait AstVisitor<'src, K: AstKind> {
         }
     }
 
+    #[inline]
     fn visit_this(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }
 
+    #[inline]
     fn visit_super(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }
 
+    #[inline]
     fn visit_null(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -258,65 +268,74 @@ pub trait AstVisitor<'src, K: AstKind> {
         self.visit_node(AstNode::ItemDecl(item_decl))?;
         let inner = item_decl.as_wrapped();
         match &inner.item {
-            Item::Import(import) => self.visit_import(import),
-            Item::Class(class) => self.visit_class(class),
-            Item::Struct(struct_) => self.visit_struct(struct_),
-            Item::Function(function) => self.visit_function(function),
-            Item::Let(field) => self.visit_field(field),
-            Item::Enum(_enum) => self.visit_enum(_enum),
+            Item::Import(import) => self.visit_import(import)?,
+            Item::Class(class) => self.visit_class(class)?,
+            Item::Struct(struct_) => self.visit_struct(struct_)?,
+            Item::Function(function) => self.visit_function(function)?,
+            Item::Let(field) => self.visit_field(field)?,
+            Item::Enum(_enum) => self.visit_enum(_enum)?,
         }
+        self.post_visit_node(AstNode::ItemDecl(item_decl))
     }
 
     fn visit_stmt(&mut self, stmt: &StmtT<'src, K>) -> Result<(), Self::Error> {
         self.visit_node(AstNode::Stmt(stmt))?;
         let inner = stmt.as_wrapped();
         match inner {
-            Stmt::Let { name, typ, value } => self.visit_let(name, typ, value),
+            Stmt::Let { name, typ, value } => self.visit_let(name, typ, value)?,
             Stmt::Switch {
                 expr,
                 cases,
                 default,
-            } => self.visit_switch(expr, cases, default),
-            Stmt::If { blocks, else_ } => self.visit_if(blocks, else_),
-            Stmt::While(block) => self.visit_while(block),
-            Stmt::ForIn { name, iter, body } => self.visit_for_in(name, iter, body),
-            Stmt::Return(expr) => self.visit_return(expr),
-            Stmt::Break => self.visit_break(),
-            Stmt::Continue => self.visit_continue(),
-            Stmt::Expr(expr) => self.visit_expr(expr),
-        }
+            } => self.visit_switch(expr, cases, default)?,
+            Stmt::If { blocks, else_ } => self.visit_if(blocks, else_)?,
+            Stmt::While(block) => self.visit_while(block)?,
+            Stmt::ForIn { name, iter, body } => self.visit_for_in(name, iter, body)?,
+            Stmt::Return(expr) => self.visit_return(expr)?,
+            Stmt::Break => self.visit_break()?,
+            Stmt::Continue => self.visit_continue()?,
+            Stmt::Expr(expr) => self.visit_expr(expr)?,
+        };
+        self.post_visit_node(AstNode::Stmt(stmt))
     }
 
     fn visit_expr(&mut self, expr: &ExprT<'src, K>) -> Result<(), Self::Error> {
         self.visit_node(AstNode::Expr(expr))?;
         let inner = expr.as_wrapped();
         match inner {
-            Expr::Ident(ident) => self.visit_ident(ident),
-            Expr::Constant(value) => self.visit_constant(value),
-            Expr::ArrayLit(elements) => self.visit_array_lit(elements),
-            Expr::InterpolatedString(parts) => self.visit_interpolated_string(parts),
-            Expr::Assign { lhs, rhs } => self.visit_assign(lhs, rhs),
-            Expr::BinOp { lhs, op, rhs } => self.visit_bin_op(lhs, *op, rhs),
-            Expr::UnOp { op, expr } => self.visit_un_op(*op, expr),
+            Expr::Ident(ident) => self.visit_ident(ident)?,
+            Expr::Constant(value) => self.visit_constant(value)?,
+            Expr::ArrayLit(elements) => self.visit_array_lit(elements)?,
+            Expr::InterpolatedString(parts) => self.visit_interpolated_string(parts)?,
+            Expr::Assign { lhs, rhs } => self.visit_assign(lhs, rhs)?,
+            Expr::BinOp { lhs, op, rhs } => self.visit_bin_op(lhs, *op, rhs)?,
+            Expr::UnOp { op, expr } => self.visit_un_op(*op, expr)?,
             Expr::Call {
                 expr,
                 type_args,
                 args,
-            } => self.visit_call(expr, type_args, args),
-            Expr::Member { expr, member } => self.visit_member(expr, member),
-            Expr::Index { expr, index } => self.visit_index(expr, index),
-            Expr::DynCast { expr, typ } => self.visit_dyn_cast(expr, typ),
-            Expr::New { typ, args } => self.visit_new(typ, args),
-            Expr::Conditional { cond, then, else_ } => self.visit_conditional(cond, then, else_),
-            Expr::Lambda { params, body } => self.visit_lambda(params, body),
-            Expr::This => self.visit_this(),
-            Expr::Super => self.visit_super(),
-            Expr::Null => self.visit_null(),
-            Expr::Error => Ok(()),
+            } => self.visit_call(expr, type_args, args)?,
+            Expr::Member { expr, member } => self.visit_member(expr, member)?,
+            Expr::Index { expr, index } => self.visit_index(expr, index)?,
+            Expr::DynCast { expr, typ } => self.visit_dyn_cast(expr, typ)?,
+            Expr::New { typ, args } => self.visit_new(typ, args)?,
+            Expr::Conditional { cond, then, else_ } => self.visit_conditional(cond, then, else_)?,
+            Expr::Lambda { params, body } => self.visit_lambda(params, body)?,
+            Expr::This => self.visit_this()?,
+            Expr::Super => self.visit_super()?,
+            Expr::Null => self.visit_null()?,
+            Expr::Error => {}
         }
+        self.post_visit_node(AstNode::Expr(expr))
     }
 
+    #[inline]
     fn visit_node(&mut self, _node: AstNode<'_, 'src, K>) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    #[inline]
+    fn post_visit_node(&mut self, _node: AstNode<'_, 'src, K>) -> Result<(), Self::Error> {
         Ok(())
     }
 }
@@ -331,9 +350,17 @@ pub enum AstNode<'a, 'src, K: AstKind> {
 impl<'a, 'src, K: AstKind> AstNode<'a, 'src, K> {
     pub fn id(self) -> NodeId {
         match self {
-            AstNode::ItemDecl(item_decl) => NodeId::item_decl::<K>(item_decl.as_wrapped()),
-            AstNode::Stmt(stmt) => NodeId::stmt::<K>(stmt.as_wrapped()),
-            AstNode::Expr(expr) => NodeId::expr::<K>(expr.as_wrapped()),
+            Self::ItemDecl(item_decl) => NodeId::item_decl::<K>(item_decl.as_wrapped()),
+            Self::Stmt(stmt) => NodeId::stmt::<K>(stmt.as_wrapped()),
+            Self::Expr(expr) => NodeId::expr::<K>(expr.as_wrapped()),
+        }
+    }
+}
+
+impl<'a, 'src> AstNode<'a, 'src, WithSpan> {
+    pub fn span(&self) -> Span {
+        match self {
+            Self::ItemDecl(&(_, span)) | Self::Stmt(&(_, span)) | Self::Expr(&(_, span)) => span,
         }
     }
 }
@@ -344,16 +371,16 @@ pub struct NodeId(*const ());
 impl NodeId {
     #[inline]
     pub fn item_decl<K: AstKind>(item_decl: &ItemDecl<'_, K>) -> Self {
-        NodeId(ptr::from_ref(item_decl).cast())
+        Self(ptr::from_ref(item_decl).cast())
     }
 
     #[inline]
     pub fn stmt<K: AstKind>(stmt: &Stmt<'_, K>) -> Self {
-        NodeId(ptr::from_ref(stmt).cast())
+        Self(ptr::from_ref(stmt).cast())
     }
 
     #[inline]
     pub fn expr<K: AstKind>(expr: &Expr<'_, K>) -> Self {
-        NodeId(ptr::from_ref(expr).cast())
+        Self(ptr::from_ref(expr).cast())
     }
 }

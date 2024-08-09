@@ -9,121 +9,6 @@ use redscript_ast::{
 };
 use redscript_parser::{lex_with_lf_and_comments, parse, parser, ParseResult, Token};
 
-pub fn format<'a>(
-    source: &'a str,
-    id: FileId,
-    settings: &'a FormatSettings,
-) -> ParseResult<impl fmt::Display + 'a> {
-    let mut errors = vec![];
-
-    let (tokens, e) = lex_with_lf_and_comments(source, id);
-    errors.extend(e);
-    let Some(tokens) = tokens else {
-        return (None, errors);
-    };
-    let (ws, tokens): (Vec<_>, Vec<_>) =
-        tokens.into_iter().partition(|(t, _)| t.is_ws_or_comment());
-
-    let (module, e) = parse(parser::module(), &tokens, id);
-    errors.extend(e);
-    let Some(module) = module else {
-        return (None, errors);
-    };
-
-    let mut collector = PrefixCollector::new(&ws);
-    collector.visit_module(&module).ok();
-
-    let display = DisplayFn(move |f: &mut fmt::Formatter<'_>| {
-        let ctx = FormatCtx {
-            settings,
-            prefixes: &collector.prefixes,
-            depth: 0,
-            parent: None,
-        };
-        write!(f, "{}", module.as_fmt(ctx))
-    });
-    (Some(display), errors)
-}
-
-#[derive(Debug)]
-pub struct PrefixCollector<'ctx, 'src> {
-    prefixes: HashMap<NodeId, Vec<Prefix<'src>>>,
-    tokens: &'ctx [Spanned<Token<'src>>],
-}
-
-impl<'ctx, 'src> PrefixCollector<'ctx, 'src> {
-    pub fn new(tokens: &'ctx [Spanned<Token<'src>>]) -> Self {
-        Self {
-            prefixes: HashMap::new(),
-            tokens,
-        }
-    }
-}
-
-impl<'ctx, 'src> AstVisitor<'src, WithSpan> for PrefixCollector<'ctx, 'src> {
-    type Error = Never;
-
-    fn visit_node(&mut self, node: SourceAstNode<'_, 'src>) -> Result<(), Self::Error> {
-        let mut prefixes = vec![];
-        let mut is_lf_seq = false;
-        let span = match node {
-            AstNode::ItemDecl((_, s)) | AstNode::Stmt((_, s)) | AstNode::Expr((_, s)) => s,
-        };
-
-        while let [(fst, s), rest @ ..] = self.tokens {
-            if s.start > span.start {
-                break;
-            }
-            match (fst, rest) {
-                // two consecutive line feeds form a line break between statements
-                (Token::LineFeed, [(Token::LineFeed, s), rest @ ..])
-                    if matches!(node, AstNode::Stmt(_)) && s.start <= span.start =>
-                {
-                    is_lf_seq = true;
-                    self.tokens = rest;
-                }
-                _ => {
-                    if is_lf_seq {
-                        prefixes.push(Prefix::LineBreak);
-                        is_lf_seq = false;
-                    }
-                    self.tokens = rest;
-                }
-            }
-            match fst {
-                Token::LineComment(comment) => prefixes.push(Prefix::LineComment(comment)),
-                Token::BlockComment(comment) => prefixes.push(Prefix::BlockComment(comment)),
-                _ => {}
-            }
-        }
-        if is_lf_seq {
-            prefixes.push(Prefix::LineBreak);
-        }
-        if !prefixes.is_empty() {
-            self.prefixes.insert(node.id(), prefixes);
-        }
-        Ok(())
-    }
-
-    fn visit_function(&mut self, function: &Function<'src, WithSpan>) -> Result<(), Self::Error> {
-        match &function.body {
-            Some(FunctionBody::Inline(expr)) => self.visit_expr(expr),
-            Some(FunctionBody::Block(block)) => {
-                self.visit_block(block)?;
-
-                if let Some((fst, _)) = block.stmts.first() {
-                    self.prefixes
-                        .entry(NodeId::stmt(fst))
-                        .or_default()
-                        .retain(|prefix| !matches!(prefix, Prefix::LineBreak));
-                }
-                Ok(())
-            }
-            None => Ok(()),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct FormatSettings {
     pub indent: u16,
@@ -149,6 +34,37 @@ impl Default for FormatSettings {
     }
 }
 
+pub fn format_document<'a>(
+    source: &'a str,
+    id: FileId,
+    settings: &'a FormatSettings,
+) -> ParseResult<impl fmt::Display + 'a> {
+    let mut errors = vec![];
+
+    let (tokens, e) = lex_with_lf_and_comments(source, id);
+    errors.extend(e);
+    let Some(tokens) = tokens else {
+        return (None, errors);
+    };
+    let (ws, tokens): (Vec<_>, Vec<_>) =
+        tokens.into_iter().partition(|(t, _)| t.is_ws_or_comment());
+
+    let (module, e) = parse(parser::module(), &tokens, id);
+    errors.extend(e);
+    let Some(module) = module else {
+        return (None, errors);
+    };
+
+    let mut collector = PrefixCollector::new(&ws);
+    collector.visit_module(&module).ok();
+
+    let display = DisplayFn(move |f: &mut fmt::Formatter<'_>| {
+        let ctx = FormatCtx::new(settings, &collector.prefixes);
+        write!(f, "{}", module.as_fmt(ctx))
+    });
+    (Some(display), errors)
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct FormatCtx<'a> {
     settings: &'a FormatSettings,
@@ -157,7 +73,21 @@ pub struct FormatCtx<'a> {
     parent: Option<ParentOp>,
 }
 
-impl<'s> FormatCtx<'s> {
+impl<'a> FormatCtx<'a> {
+    #[inline]
+    pub fn new(
+        settings: &'a FormatSettings,
+        prefixes: &'a HashMap<NodeId, Vec<Prefix<'a>>>,
+    ) -> Self {
+        Self {
+            settings,
+            prefixes,
+            depth: 0,
+            parent: None,
+        }
+    }
+
+    #[inline]
     fn ws(&self) -> Indent {
         Indent(self.depth * self.settings.indent)
     }
@@ -176,6 +106,7 @@ impl<'s> FormatCtx<'s> {
         }
     }
 
+    #[inline]
     fn current_indent(&self) -> u16 {
         self.depth * self.settings.indent
     }
@@ -1340,4 +1271,89 @@ pub enum Prefix<'src> {
     LineBreak,
     LineComment(&'src str),
     BlockComment(&'src str),
+}
+
+#[derive(Debug)]
+struct PrefixCollector<'ctx, 'src> {
+    prefixes: HashMap<NodeId, Vec<Prefix<'src>>>,
+    tokens: &'ctx [Spanned<Token<'src>>],
+}
+
+impl<'ctx, 'src> PrefixCollector<'ctx, 'src> {
+    fn new(tokens: &'ctx [Spanned<Token<'src>>]) -> Self {
+        Self {
+            prefixes: HashMap::new(),
+            tokens,
+        }
+    }
+}
+
+impl<'ctx, 'src> AstVisitor<'src, WithSpan> for PrefixCollector<'ctx, 'src> {
+    type Error = Never;
+
+    fn visit_node(&mut self, node: SourceAstNode<'_, 'src>) -> Result<(), Self::Error> {
+        let mut prefixes = vec![];
+        let mut is_lf_seq = false;
+
+        while let [(fst, span), rest @ ..] = self.tokens {
+            if span.start > node.span().start {
+                break;
+            }
+            match (fst, rest) {
+                // two consecutive line feeds form a line break between statements
+                (Token::LineFeed, [(Token::LineFeed, span), rest @ ..])
+                    if matches!(node, AstNode::Stmt(_)) && span.start <= node.span().start =>
+                {
+                    is_lf_seq = true;
+                    self.tokens = rest;
+                }
+                _ => {
+                    if is_lf_seq {
+                        prefixes.push(Prefix::LineBreak);
+                        is_lf_seq = false;
+                    }
+                    self.tokens = rest;
+                }
+            }
+            match fst {
+                Token::LineComment(comment) => prefixes.push(Prefix::LineComment(comment)),
+                Token::BlockComment(comment) => prefixes.push(Prefix::BlockComment(comment)),
+                _ => {}
+            }
+        }
+        if is_lf_seq {
+            prefixes.push(Prefix::LineBreak);
+        }
+        if !prefixes.is_empty() {
+            self.prefixes.insert(node.id(), prefixes);
+        }
+        Ok(())
+    }
+
+    fn post_visit_node(&mut self, node: AstNode<'_, 'src, WithSpan>) -> Result<(), Self::Error> {
+        while let [(Token::LineFeed, span), rest @ ..] = self.tokens {
+            if span.start >= node.span().end {
+                break;
+            }
+            self.tokens = rest;
+        }
+
+        Ok(())
+    }
+
+    fn visit_block(&mut self, block: &Block<'src, WithSpan>) -> Result<(), Self::Error> {
+        if let Some(block_span) = block.bounds_span() {
+            while let [(Token::LineFeed, span), rest @ ..] = self.tokens {
+                if span.start > block_span.start {
+                    break;
+                }
+                self.tokens = rest;
+            }
+        };
+
+        block
+            .stmts
+            .iter()
+            .try_for_each(|stmt| self.visit_stmt(stmt))
+    }
 }

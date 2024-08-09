@@ -7,10 +7,8 @@ func Test() {
     && true
     && false {
   } else if false {
-
     FTLog("a");
   } else {
-
     FTLog("b");
   }
 
@@ -52,7 +50,6 @@ func Test() {
     "magna",
     "aliqua"
   ] {
-
     FTLog(x);
   }
 

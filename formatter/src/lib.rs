@@ -265,16 +265,16 @@ impl<K: AstKind> Formattable for Function<'_, K> {
         }
         write!(
             f,
-            "({}) ",
+            "({})",
             SepByMultiline(self.params.iter().map(Wrapper::as_wrapped), ", ", ctx)
         )?;
         if let Some(typ) = &self.return_ty {
-            write!(f, "-> {} ", (**typ).as_wrapped().as_fmt(ctx))?;
+            write!(f, " -> {}", (**typ).as_wrapped().as_fmt(ctx))?;
         }
         match &self.body {
-            Some(FunctionBody::Block(block)) => write!(f, "{}", block.as_fmt(ctx)),
+            Some(FunctionBody::Block(block)) => write!(f, " {}", block.as_fmt(ctx)),
             Some(FunctionBody::Inline(expr)) => {
-                write!(f, "= {};", (**expr).as_wrapped().as_fmt(ctx))
+                write!(f, " = {};", (**expr).as_wrapped().as_fmt(ctx))
             }
             None => write!(f, ";"),
         }

@@ -6,7 +6,9 @@ private native class NativeClass extends IScriptable {
   let a: Int32 = 0;
   let b: Int64;
 
-  private native func NativeMethod(opt arg: Int16) -> Uint16 ;
+  private native func NativeMethod(opt arg: Int16) -> Uint16;
+
+  private native func NativeMethodTwo();
 
   final func ScriptedMethod(out arg: Int32) {
     arg = 0;

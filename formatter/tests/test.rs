@@ -14,7 +14,12 @@ fn formatted_files() {
     for (id, file) in files.iter() {
         let (module, errors) = format_document(file.source(), id, &settings);
         if let (Some(module), []) = (module, &errors[..]) {
-            assert_eq!(module.to_string(), file.source());
+            assert_eq!(
+                module.to_string(),
+                file.source(),
+                "{}",
+                file.path().display()
+            );
         } else {
             panic!("failed to parse {}: {errors:?}", file.path().display());
         }

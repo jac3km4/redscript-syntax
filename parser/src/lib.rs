@@ -46,12 +46,10 @@ pub fn parse_expr(src: &str, file: FileId) -> ParseResult<SourceExpr<'_>> {
     parse!(src, parser::expr(), file)
 }
 
-#[inline]
 pub fn lex(src: &str, f: FileId) -> ParseResult<Vec<Spanned<Token<'_, Span>>>> {
     lex_internal(src, f, false)
 }
 
-#[inline]
 pub fn lex_with_lf_and_comments(
     src: &str,
     f: FileId,

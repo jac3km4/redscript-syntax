@@ -456,7 +456,6 @@ struct StrParts<'src> {
 }
 
 impl<'src> Container<Cow<'src, str>> for StrParts<'src> {
-    #[inline]
     fn push(&mut self, c: Cow<'src, str>) {
         if self.str.is_empty() {
             self.str = c;

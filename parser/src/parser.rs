@@ -30,27 +30,22 @@ impl<'tok, 'src: 'tok, A, P> Parse<'tok, 'src, A> for P where
 {
 }
 
-#[inline]
 pub fn item_decl<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SourceItemDecl<'src>> {
     all_parsers().0
 }
 
-#[inline]
 pub fn item<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SourceItem<'src>> {
     all_parsers().1
 }
 
-#[inline]
 pub fn stmt<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SourceStmt<'src>> {
     block_stmt_expr_parsers().1
 }
 
-#[inline]
 fn expr_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, (SourceExpr<'src>, Span)> {
     block_stmt_expr_parsers().2
 }
 
-#[inline]
 pub fn expr<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, SourceExpr<'src>> {
     expr_with_span().map(|(expr, _)| expr)
 }
@@ -132,7 +127,6 @@ fn ident<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, &'src str> {
     .labelled("identifier")
 }
 
-#[inline]
 fn ident_with_span<'tok, 'src: 'tok>() -> impl Parse<'tok, 'src, Spanned<&'src str>> {
     ident().map_with(|ident, e| (ident, e.span()))
 }

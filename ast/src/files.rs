@@ -31,11 +31,12 @@ impl SourceMap {
         id
     }
 
+    #[inline]
     pub fn get(&self, id: FileId) -> Option<&File> {
         self.files.get(id.0 as usize)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (FileId, &File)> {
+    pub fn files(&self) -> impl Iterator<Item = (FileId, &File)> {
         self.files
             .iter()
             .enumerate()

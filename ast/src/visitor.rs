@@ -350,7 +350,7 @@ pub enum AstNode<'a, 'src, K: AstKind> {
     Expr(&'a ExprT<'src, K>),
 }
 
-impl<'a, 'src, K: AstKind> AstNode<'a, 'src, K> {
+impl<K: AstKind> AstNode<'_, '_, K> {
     pub fn id(self) -> NodeId {
         match self {
             Self::ItemDecl(item_decl) => NodeId::item_decl::<K>(item_decl.as_wrapped()),
@@ -360,7 +360,7 @@ impl<'a, 'src, K: AstKind> AstNode<'a, 'src, K> {
     }
 }
 
-impl<'a, 'src> AstNode<'a, 'src, WithSpan> {
+impl AstNode<'_, '_, WithSpan> {
     pub fn span(&self) -> Span {
         match self {
             Self::ItemDecl(&(_, span)) | Self::Stmt(&(_, span)) | Self::Expr(&(_, span)) => span,

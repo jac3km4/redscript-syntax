@@ -51,7 +51,7 @@ fn main() -> anyhow::Result<()> {
     };
     let mut errors = vec![];
 
-    for (id, file) in map.iter() {
+    for (id, file) in map.files() {
         let (module, e) = format_document(file.source(), id, &settings);
         errors.extend(e);
         let Some(module) = module else {

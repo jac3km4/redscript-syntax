@@ -126,7 +126,7 @@ impl<'a> FormatCtx<'a> {
         }
     }
 
-    fn node_prefix(&self, id: NodeId, indent: Option<Indent>) -> impl fmt::Display + '_ {
+    fn node_prefix(&self, id: NodeId, indent: Option<Indent>) -> impl fmt::Display + use<'_> {
         DisplayFn(move |f: &mut fmt::Formatter<'_>| {
             self.prefixes
                 .get(&id)
@@ -1298,7 +1298,7 @@ impl<'ctx, 'src> PrefixCollector<'ctx, 'src> {
     }
 }
 
-impl<'ctx, 'src> AstVisitor<'src, WithSpan> for PrefixCollector<'ctx, 'src> {
+impl<'src> AstVisitor<'src, WithSpan> for PrefixCollector<'_, 'src> {
     type Error = Never;
 
     fn visit_node(&mut self, node: SourceAstNode<'_, 'src>) -> Result<(), Self::Error> {
@@ -1364,7 +1364,7 @@ impl<'ctx, 'src> AstVisitor<'src, WithSpan> for PrefixCollector<'ctx, 'src> {
 
     fn visit_default(&mut self, stmts: &[Spanned<SourceStmt<'src>>]) -> Result<(), Self::Error> {
         if let (Some((_, fst)), Some((_, lst))) = (stmts.first(), stmts.last()) {
-            self.skip_until(fst.merge(lst))
+            self.skip_until(fst.merge(lst));
         };
         stmts.iter().try_for_each(|stmt| self.visit_stmt(stmt))
     }

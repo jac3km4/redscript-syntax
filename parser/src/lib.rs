@@ -59,7 +59,7 @@ pub fn lex_with_lf_and_comments(
 
 fn lex_internal(
     src: &str,
-    f: FileId,
+    file_id: FileId,
     keep_lf_and_comments: bool,
 ) -> ParseResult<Vec<Spanned<Token<'_, Span>>>> {
     let (output, errors) = lexer::lex(keep_lf_and_comments)
@@ -67,14 +67,21 @@ fn lex_internal(
         .into_output_errors();
     let errors = errors
         .into_iter()
-        .map(|err| Error::Lex(err.to_string(), Span::from((f, *err.span()))))
+        .map(|err| {
+            let span = Span::from((file_id, *err.span()));
+            Error::Lex(FormattedError(err).to_string(), span)
+        })
         .collect();
     let Some(tokens) = output else {
         return (None, errors);
     };
+
     let output = tokens
         .into_iter()
-        .map(|(tok, span)| (tok.map_span(|s| Span::from((f, s))), Span::from((f, span))))
+        .map(|(tok, span)| {
+            let tok = tok.map_span(|s| Span::from((file_id, s)));
+            (tok, Span::from((file_id, span)))
+        })
         .collect();
     (Some(output), errors)
 }
@@ -88,10 +95,7 @@ pub fn parse<'tok, 'src: 'tok, A>(
     let (output, errors) = parser
         .parse(parser_input(tokens, file))
         .into_output_errors();
-    let errors = errors
-        .into_iter()
-        .map(|err| Error::Parse(err.to_string(), *err.span()))
-        .collect();
+    let errors = errors.into_iter().map(Error::new_parse).collect();
     (output, errors)
 }
 
@@ -114,8 +118,22 @@ pub enum Error {
 }
 
 impl Error {
+    fn new_parse<T>(error: chumsky::error::Rich<'_, T, Span>) -> Self
+    where
+        T: fmt::Display,
+    {
+        let span = *error.span();
+        Error::Parse(format!("{}", FormattedError(error)), span)
+    }
+
     pub fn pretty<'a>(&'a self, map: &'a SourceMap) -> impl fmt::Display + 'a {
         ErrorDisplay { map, err: self }
+    }
+
+    pub fn span(&self) -> Span {
+        match self {
+            Error::Parse(_, span) | Error::Lex(_, span) => *span,
+        }
     }
 }
 
@@ -128,6 +146,17 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+struct FormattedError<'a, T, S>(chumsky::error::Rich<'a, T, S>);
+
+impl<T: fmt::Display, S> fmt::Display for FormattedError<'_, T, S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.reason())?;
+        self.0
+            .contexts()
+            .try_for_each(|(label, _)| write!(f, " in {label}"))
+    }
+}
 
 #[derive(Debug)]
 struct ErrorDisplay<'a> {
